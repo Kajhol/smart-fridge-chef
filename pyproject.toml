@@ -1,0 +1,21 @@
+[project]
+name = "smart-fridge-chef"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "KajetanHoldan", email = "kajholek@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "pillow>=13.0.0",
+    "pydantic>=2.14.2",
+    "python-dotenv>=1.2.4",
+]
+
+[project.scripts]
+smart-fridge-chef = "smart_fridge_chef:main"
+
+[build-system]
+requires = ["uv_build>=0.12.24,<0.13.0"]
+build-backend = "uv_build"
