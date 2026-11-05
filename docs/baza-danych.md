@@ -14,8 +14,8 @@ lodówka ──ingredient_id──► SŁOWNIK ◄──ingredient_id── skł
 
 | Tabela | Kolumny |
 |---|---|
-| `ingredients` | `id` (np. `milk`), `name_pl`, `name_en`, `unit` (`pcs`/`g`/`ml`), `kcal` (na 100 g / 100 ml / 1 szt.), `allergens` |
-| `recipes` | `id`, `title`, `steps`, `time_min`, `servings`, `difficulty` (`easy`/`medium`/`hard`), `rating`, `source`, `url` |
+| `ingredients` | `id` (np. `milk`), `name_pl`, `name_en`, `unit` (`pcs`/`g`/`ml`), `allergens`, `aliases` (nazwy z przepisów, np. `eggs`, `egg yolks` → `egg`) |
+| `recipes` | `id`, `title`, `steps`, `time_min`, `servings`, `kcal_per_serving` (ze źródła przepisu), `difficulty` (`easy`/`medium`/`hard`), `rating`, `source`, `url` |
 | `recipe_ingredients` | `recipe_id`, `ingredient_id`, `quantity`, `unit`, `raw_text` (oryginał ze strony, do sprawdzania mapowania) |
 | `pantry_staples` | `ingredient_id` (sól, olej, pieprz – zakładamy, że user zawsze je ma) |
 
