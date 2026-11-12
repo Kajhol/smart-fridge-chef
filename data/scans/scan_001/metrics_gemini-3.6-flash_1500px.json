@@ -1,0 +1,38 @@
+{
+  "model": "gemini-3.6-flash",
+  "max_side": 1500,
+  "seconds": 46.6,
+  "scan_id": "scan_001",
+  "expected": 18,
+  "predicted": 16,
+  "found": 13,
+  "recall": 0.7222222222222222,
+  "recall_seen": 0.7222222222222222,
+  "recall_by_visibility": {
+    "visible": 0.9166666666666666,
+    "partial": 0.3333333333333333,
+    "hidden": null
+  },
+  "precision": 0.8125,
+  "f1": 0.7647058823529411,
+  "missed": [
+    "butter",
+    "chives",
+    "corn",
+    "garlic",
+    "lemon"
+  ],
+  "hallucinations": [
+    "chicken_breast",
+    "olive_oil"
+  ],
+  "duplicates": [
+    "mustard"
+  ],
+  "quantity_error": 0.23838383838383842,
+  "unit_mismatches": [
+    "lettuce"
+  ],
+  "unknown_expected": 6,
+  "unknown_predicted": 2
+}

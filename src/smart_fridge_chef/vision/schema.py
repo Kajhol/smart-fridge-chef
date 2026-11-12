@@ -1,11 +1,19 @@
-"""Format odpowiedzi Vision LLM: produkty rozpoznane na zdjęciach jednego skanu."""
+"""Formaty skanu: zdjęcia na wejściu (Photo) i odpowiedź Vision LLM (ScanResult)."""
 
+from dataclasses import dataclass
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
 Unit = Literal["pcs", "g", "ml"]
 Confidence = Literal["low", "medium", "high"]
+Zone = Literal["door", "shelves_upper", "shelves_lower", "extra"]
+
+
+@dataclass
+class Photo:
+    zone: Zone
+    data: bytes
 
 
 class DetectedItem(BaseModel):

@@ -21,7 +21,7 @@ Different products with the same id (e.g. two brands of milk) are separate entri
 - Only list what you can actually see. Do not guess products hidden behind others.
 - confidence: high = label readable or product unmistakable, medium = recognised by shape or colour, \
 low = uncertain.
-- Ignore non-food items.
+- Ignore non-food items and plain water (e.g. water in a filter jug).
 
 Dictionary (id | Polish name | unit):
 {dictionary}

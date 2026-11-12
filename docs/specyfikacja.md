@@ -98,6 +98,8 @@ Na później (poza PoC): użytkownik nagrywa film, a aplikacja sama wybiera z ni
 - Produkt spoza słownika, który w przepisie da się zastąpić produktem ze słownika, wpisujemy pod ID tego produktu, a w `label` zostawiamy prawdziwą nazwę. Przykład: mandarynki to `orange` z etykietą „mandarynki”. Jeśli zastąpić się nie da (dżem, mleczko zagęszczone, gotowe dania), wpisujemy `null`.
 - Ilości spisujemy z opakowań (gramatura, liczba sztuk), a nie szacujemy ze zdjęć. Inaczej ręczna lista i model zgadują tak samo i błąd ilości nic nie mówi.
 - Ten sam produkt w dwóch opakowaniach różnych marek to dwie pozycje (np. dwa majonezy).
+- Wody (np. w dzbanku filtrującym) nie spisujemy. Prompt każe modelowi ją ignorować, a ewaluacja pomija `water` po obu stronach (`IGNORED_IDS`), bo do przepisów nie ma znaczenia.
+- Gotowe dania (katering, resztki obiadu w pudełku) to jedna pozycja `null` na danie, ze składnikami w `label`. Nie rozbijamy ich na składniki, bo to nie są produkty do gotowania.
 - Format pliku: `data/scans/scan_NNN/ground_truth.json`, sprawdzany przez `GroundTruth` w `src/smart_fridge_chef/evaluation.py`.
 
 **Metryki (na skan, potem średnia po zbiorze).**

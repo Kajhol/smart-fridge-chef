@@ -7,11 +7,11 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from smart_fridge_chef.vision.client import Zone
-from smart_fridge_chef.vision.schema import DetectedItem, ScanResult, Unit
+from smart_fridge_chef.vision.schema import DetectedItem, ScanResult, Unit, Zone
 
 Visibility = Literal["visible", "partial", "hidden"]
 VISIBILITY_ORDER: dict[Visibility, int] = {"visible": 0, "partial": 1, "hidden": 2}
+IGNORED_IDS = frozenset({"water"})
 
 
 class TruthItem(BaseModel):
@@ -98,8 +98,10 @@ def quantity_errors(
 
 
 def evaluate(truth: GroundTruth, prediction: ScanResult) -> ScanMetrics:
-    expected = [item for item in truth.items if item.ingredient_id is not None]
-    predicted = [item for item in prediction.items if item.ingredient_id is not None]
+    expected = [item for item in truth.items if item.ingredient_id is not None and item.ingredient_id not in IGNORED_IDS]
+    predicted = [
+        item for item in prediction.items if item.ingredient_id is not None and item.ingredient_id not in IGNORED_IDS
+    ]
     expected_counts = Counter(item.ingredient_id for item in expected)
     predicted_counts = Counter(item.ingredient_id for item in predicted)
 

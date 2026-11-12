@@ -5,7 +5,9 @@ import pytest
 from PIL import Image
 
 from smart_fridge_chef.dictionary import Ingredient
-from smart_fridge_chef.vision.client import Photo, build_contents, normalize_ids, resolve_id, scan
+from smart_fridge_chef.vision.client import normalize_ids, resolve_id, scan, scan_raw
+from smart_fridge_chef.vision.gemini_provider import build_contents
+from smart_fridge_chef.vision.schema import Photo
 from smart_fridge_chef.vision.schema import DetectedItem, ScanResult
 
 INGREDIENTS = {
@@ -77,19 +79,30 @@ def test_scan_returns_normalized_result():
     response = '{"items": [{"ingredient_id": "eggs", "label": "jajka", "quantity": 6, "unit": "pcs", "confidence": "high"}]}'
     client = make_fake_client(response)
 
-    result = scan([Photo(zone="door", data=make_jpeg())], model="test-model", client=client)
+    result = scan([Photo(zone="door", data=make_jpeg())], model="gemini-test", client=client)
 
     assert result.items[0].ingredient_id == "egg"
     call = client.models.calls[0]
-    assert call["model"] == "test-model"
+    assert call["model"] == "gemini-test"
     assert "egg | jajko | pcs" in call["config"].system_instruction
     assert call["config"].response_mime_type == "application/json"
+
+
+def test_scan_raw_keeps_model_ids_unchanged():
+    response = '{"items": [{"ingredient_id": "eggs", "label": "jajka", "quantity": 6, "unit": "pcs", "confidence": "high"}]}'
+    raw = scan_raw([Photo(zone="door", data=make_jpeg())], INGREDIENTS, client=make_fake_client(response))
+    assert raw.items[0].ingredient_id == "eggs"
 
 
 def test_scan_rejects_response_breaking_schema():
     response = '{"items": [{"ingredient_id": "milk", "label": "mleko", "quantity": 0, "unit": "ml", "confidence": "high"}]}'
     with pytest.raises(ValueError):
         scan([Photo(zone="door", data=make_jpeg())], client=make_fake_client(response))
+
+
+def test_scan_rejects_unknown_provider():
+    with pytest.raises(ValueError, match="Unknown provider"):
+        scan([Photo(zone="door", data=make_jpeg())], model="llama-3", client=make_fake_client("{}"))
 
 
 def test_scan_without_photos_does_not_call_model():

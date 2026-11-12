@@ -1,33 +1,14 @@
-"""Wywołanie Vision LLM (Gemini): zdjęcia jednego skanu -> ScanResult."""
+"""Skan lodówki: wybór dostawcy Vision LLM po nazwie modelu i normalizacja ID do słownika."""
 
-from dataclasses import dataclass
-from typing import Literal
-
-from google import genai
-from google.genai import types
+from typing import Any
 
 from smart_fridge_chef.dictionary import Ingredient, load_ingredients
-from smart_fridge_chef.vision.images import DEFAULT_MAX_SIDE, prepare_image
+from smart_fridge_chef.vision import gemini_provider, openai_provider
+from smart_fridge_chef.vision.images import DEFAULT_MAX_SIDE
 from smart_fridge_chef.vision.prompt import build_system_prompt
-from smart_fridge_chef.vision.schema import ScanResult
-
-Zone = Literal["door", "shelves_upper", "shelves_lower", "extra"]
+from smart_fridge_chef.vision.schema import Photo, ScanResult
 
 DEFAULT_MODEL = "gemini-3.1-flash-lite"
-
-
-@dataclass
-class Photo:
-    zone: Zone
-    data: bytes
-
-
-def build_contents(photos: list[Photo], max_side: int) -> list[str | types.Part]:
-    contents: list[str | types.Part] = []
-    for number, photo in enumerate(photos, start=1):
-        contents.append(f"Photo {number}, zone: {photo.zone}")
-        contents.append(types.Part.from_bytes(data=prepare_image(photo.data, max_side), mime_type="image/jpeg"))
-    return contents
 
 
 def resolve_id(raw_id: str | None, ingredients: dict[str, Ingredient], alias_to_id: dict[str, str]) -> str | None:
@@ -49,21 +30,26 @@ def scan(
     photos: list[Photo],
     model: str = DEFAULT_MODEL,
     max_side: int = DEFAULT_MAX_SIDE,
-    client: genai.Client | None = None,
+    client: Any = None,
+) -> ScanResult:
+    ingredients = load_ingredients()
+    raw = scan_raw(photos, ingredients, model=model, max_side=max_side, client=client)
+    return normalize_ids(raw, ingredients)
+
+
+def scan_raw(
+    photos: list[Photo],
+    ingredients: dict[str, Ingredient],
+    model: str = DEFAULT_MODEL,
+    max_side: int = DEFAULT_MAX_SIDE,
+    client: Any = None,
 ) -> ScanResult:
     if not photos:
         raise ValueError("A scan needs at least one photo")
 
-    ingredients = load_ingredients()
-    client = client or genai.Client()
-    response = client.models.generate_content(
-        model=model,
-        contents=build_contents(photos, max_side),
-        config=types.GenerateContentConfig(
-            system_instruction=build_system_prompt(ingredients),
-            response_mime_type="application/json",
-            response_json_schema=ScanResult.model_json_schema(),
-        ),
-    )
-    result = ScanResult.model_validate_json(response.text)
-    return normalize_ids(result, ingredients)
+    system_prompt = build_system_prompt(ingredients)
+    if model.startswith("gemini-"):
+        return gemini_provider.call(photos, system_prompt, model, max_side, client)
+    if model.startswith("gpt-"):
+        return openai_provider.call(photos, system_prompt, model, max_side, client)
+    raise ValueError(f"Unknown provider for model: {model}")

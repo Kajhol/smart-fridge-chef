@@ -79,6 +79,13 @@ def test_quantity_error_skipped_when_counts_differ():
     assert metrics.quantity_error is None
 
 
+def test_water_is_ignored():
+    metrics = run([truth_item("egg")], [predicted_item("egg"), predicted_item("water", quantity=1000, unit="ml")])
+    assert metrics.predicted == 1
+    assert metrics.hallucinations == []
+    assert metrics.precision == 1
+
+
 def test_empty_prediction():
     metrics = run([truth_item("egg")], [])
     assert metrics.recall == 0
