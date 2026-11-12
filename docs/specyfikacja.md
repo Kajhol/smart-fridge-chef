@@ -93,6 +93,13 @@ Na później (poza PoC): użytkownik nagrywa film, a aplikacja sama wybiera z ni
 | `quantity`, `unit` | ilość w jednostce ze słownika |
 | `visibility` | `visible` (widać i da się rozpoznać), `partial` (częściowo zasłonięty), `hidden` (jest w lodówce, ale na zdjęciach go nie widać) |
 
+**Reguły spisywania** (dopisane 12.11.2026 po pierwszym skanie, żeby listy różnych osób były porównywalne):
+
+- Produkt spoza słownika, który w przepisie da się zastąpić produktem ze słownika, wpisujemy pod ID tego produktu, a w `label` zostawiamy prawdziwą nazwę. Przykład: mandarynki to `orange` z etykietą „mandarynki”. Jeśli zastąpić się nie da (dżem, mleczko zagęszczone, gotowe dania), wpisujemy `null`.
+- Ilości spisujemy z opakowań (gramatura, liczba sztuk), a nie szacujemy ze zdjęć. Inaczej ręczna lista i model zgadują tak samo i błąd ilości nic nie mówi.
+- Ten sam produkt w dwóch opakowaniach różnych marek to dwie pozycje (np. dwa majonezy).
+- Format pliku: `data/scans/scan_NNN/ground_truth.json`, sprawdzany przez `GroundTruth` w `src/smart_fridge_chef/evaluation.py`.
+
 **Metryki (na skan, potem średnia po zbiorze).**
 
 | Metryka | Co mierzy | Uwagi |
@@ -171,11 +178,30 @@ smart-fridge-chef/
 
 **Dlaczego.** Zmianę formatu odpowiedzi API (np. `ScanResult`) robimy w backendzie i aplikacji w jednym commicie. Prowadzący dostaje jeden link do całego projektu. Expo działa bez problemu z podfolderu (`cd mobile && npx expo start`).
 
+### D-008: Pierwszy dostawca Vision LLM to Gemini (`gemini-3.1-flash-lite`)
+
+- **Data:** 12.11.2026
+- **Autor:** Kajtek
+- **Status: przyjęta** (dotyczy tylko modelu na start; porównanie modeli w O-002)
+
+**Decyzja.** Klient Vision LLM (`src/smart_fridge_chef/vision/client.py`) na start woła Gemini przez SDK `google-genai`. Domyślny model to `gemini-3.1-flash-lite`. Klucz trzymamy w `.env` jako `GEMINI_API_KEY` (D-005).
+
+**Dlaczego.**
+
+- Darmowy limit w Google AI Studio. Klucz dostaje się bez podpinania karty, więc każdy w zespole może od razu testować. OpenAI wymaga doładowania kredytów z góry.
+- Gemini przyjmuje schemat JSON wygenerowany z `ScanResult` (`response_json_schema`). Sprawdzone na żywym API 12.11.2026, odpowiedź przechodzi walidację Pydantica.
+
+**Konsekwencje.**
+
+- Wszystkie zdjęcia skanu idą w jednym wywołaniu, każde podpisane strefą. To pierwszy wariant z O-007.
+- Model czasem zwraca ID spoza słownika (np. `eggs` zamiast `egg`). Klient mapuje takie ID przez aliasy ze słownika, a jeśli nic nie pasuje, ustawia `null` i zostawia `label`. Pozycja trafia wtedy do „spoza słownika” (D-003).
+- Inni dostawcy (OpenAI, Anthropic) dochodzą jako kolejne warianty przy porównaniu w O-002. Format wyniku (`ScanResult`) zostaje ten sam.
+
 ## Otwarte pytania
 
 | Nr | Pytanie | Propozycja | Kto / do kiedy |
 |---|---|---|---|
-| O-002 | Które Vision LLM porównujemy? | Po jednym tańszym i mocniejszym od 2–3 dostawców (PDF) | Zespół |
+| O-002 | Które Vision LLM porównujemy? | Po jednym tańszym i mocniejszym od 2–3 dostawców (PDF). Start: `gemini-3.1-flash-lite` (D-008). Dostępne 12.11.2026 w Gemini API m.in. `gemini-3.5-flash-lite`, `gemini-3.6-flash`, `gemini-3.8-flash`, `gemini-4-argon`. Które są w darmowym limicie, trzeba sprawdzić w cenniku. | Zespół |
 | O-003 | Źródło przepisów: RecipeNLG czy Food.com? | Food.com; licencję sprawdzić przed importem (PDF). Słownik jest już zbudowany na Food.com (kopia na Hugging Face: `KingName1/food.com`). | Zespół |
 | O-004 | Jaki jest termin oddania projektu? | Zapytać prowadzącego w następnym mailu. Frontend w TypeScript jest rozstrzygnięty (D-006). | Kajtek |
 | O-005 | Do jakiej rozdzielczości zmniejszamy zdjęcia? | Zmierzyć 1000 i 1500 px na dłuższym boku i wybrać najniższą, przy której etykiety są czytelne | Kajtek |

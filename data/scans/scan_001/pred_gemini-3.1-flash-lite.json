@@ -1,0 +1,95 @@
+{
+  "items": [
+    {
+      "ingredient_id": "margarine",
+      "label": "margaryna Flora Original",
+      "quantity": 400.0,
+      "unit": "g",
+      "confidence": "high"
+    },
+    {
+      "ingredient_id": "tomato_paste",
+      "label": "koncentrat pomidorowy Łowicz",
+      "quantity": 100.0,
+      "unit": "g",
+      "confidence": "high"
+    },
+    {
+      "ingredient_id": "milk",
+      "label": "mleko UHT 1,5% 1 l",
+      "quantity": 1000.0,
+      "unit": "ml",
+      "confidence": "high"
+    },
+    {
+      "ingredient_id": "mayonnaise",
+      "label": "majonez Winiary",
+      "quantity": 300.0,
+      "unit": "g",
+      "confidence": "high"
+    },
+    {
+      "ingredient_id": "ketchup",
+      "label": "ketchup",
+      "quantity": 300.0,
+      "unit": "g",
+      "confidence": "medium"
+    },
+    {
+      "ingredient_id": "egg",
+      "label": "jajka",
+      "quantity": 10.0,
+      "unit": "pcs",
+      "confidence": "high"
+    },
+    {
+      "ingredient_id": "hard_cheese",
+      "label": "ser żółty plastry",
+      "quantity": 150.0,
+      "unit": "g",
+      "confidence": "medium"
+    },
+    {
+      "ingredient_id": null,
+      "label": "słoik z przetworami",
+      "quantity": 1.0,
+      "unit": "pcs",
+      "confidence": "medium"
+    },
+    {
+      "ingredient_id": "lettuce",
+      "label": "sałata lodowa",
+      "quantity": 1.0,
+      "unit": "pcs",
+      "confidence": "high"
+    },
+    {
+      "ingredient_id": "orange",
+      "label": "pomarańcze",
+      "quantity": 3.0,
+      "unit": "pcs",
+      "confidence": "high"
+    },
+    {
+      "ingredient_id": "cucumber",
+      "label": "ogórek",
+      "quantity": 1.0,
+      "unit": "pcs",
+      "confidence": "high"
+    },
+    {
+      "ingredient_id": "bell_pepper",
+      "label": "papryka czerwona",
+      "quantity": 1.0,
+      "unit": "pcs",
+      "confidence": "high"
+    },
+    {
+      "ingredient_id": "onion",
+      "label": "cebula",
+      "quantity": 1.0,
+      "unit": "pcs",
+      "confidence": "medium"
+    }
+  ]
+}

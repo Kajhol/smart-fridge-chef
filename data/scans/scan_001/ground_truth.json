@@ -1,0 +1,36 @@
+{
+  "scan_id": "scan_001",
+  "date": "2026-11-12",
+  "photos": {
+    "drzwi.jpg": "door",
+    "shelves.jpg": "shelves_upper",
+    "extra1.jpg": "extra",
+    "extra2.jpg": "extra"
+  },
+  "items": [
+    {"ingredient_id": "lettuce", "label": "sałata lodowa", "quantity": 500, "unit": "g", "visibility": "visible"},
+    {"ingredient_id": "chives", "label": "szczypiorek", "quantity": 50, "unit": "g", "visibility": "partial"},
+    {"ingredient_id": "margarine", "label": "margaryna Flora Original", "quantity": 400, "unit": "g", "visibility": "visible"},
+    {"ingredient_id": "garlic", "label": "czosnek", "quantity": 50, "unit": "g", "visibility": "partial"},
+    {"ingredient_id": "milk", "label": "mleko UHT 1,5% 1 l", "quantity": 1000, "unit": "ml", "visibility": "visible"},
+    {"ingredient_id": "tomato_paste", "label": "koncentrat pomidorowy Łowicz", "quantity": 90, "unit": "g", "visibility": "visible"},
+    {"ingredient_id": "ketchup", "label": "ketchup Heinz", "quantity": 300, "unit": "g", "visibility": "visible"},
+    {"ingredient_id": "mustard", "label": "musztarda", "quantity": 200, "unit": "g", "visibility": "visible"},
+    {"ingredient_id": "mayonnaise", "label": "majonez Winiary", "quantity": 400, "unit": "g", "visibility": "visible"},
+    {"ingredient_id": "mayonnaise", "label": "majonez Stąd takie Dobre XXL", "quantity": 700, "unit": "g", "visibility": "visible"},
+    {"ingredient_id": null, "label": "sos amerykański", "quantity": 1, "unit": "pcs", "visibility": "partial"},
+    {"ingredient_id": null, "label": "wódka chorwacka", "quantity": 500, "unit": "ml", "visibility": "visible"},
+    {"ingredient_id": "orange", "label": "mandarynki", "quantity": 3, "unit": "pcs", "visibility": "visible"},
+    {"ingredient_id": "cucumber", "label": "ogórek", "quantity": 1, "unit": "pcs", "visibility": "partial"},
+    {"ingredient_id": "lemon", "label": "cytryna", "quantity": 1, "unit": "pcs", "visibility": "partial"},
+    {"ingredient_id": "bell_pepper", "label": "papryka czerwona", "quantity": 1, "unit": "pcs", "visibility": "visible"},
+    {"ingredient_id": "egg", "label": "jajka", "quantity": 10, "unit": "pcs", "visibility": "visible"},
+    {"ingredient_id": null, "label": "dżem", "quantity": 1, "unit": "pcs", "visibility": "visible"},
+    {"ingredient_id": null, "label": "oliwki zielone w słoiku", "quantity": 1, "unit": "pcs", "visibility": "visible"},
+    {"ingredient_id": "hard_cheese", "label": "ser Maazdamer w plastrach", "quantity": 150, "unit": "g", "visibility": "visible"},
+    {"ingredient_id": null, "label": "katering (pudełka z gotowym jedzeniem)", "quantity": 3, "unit": "pcs", "visibility": "partial"},
+    {"ingredient_id": "corn", "label": "kukurydza z puszki (otwarta)", "quantity": 200, "unit": "g", "visibility": "visible"},
+    {"ingredient_id": "butter", "label": "masło w niebieskiej folii (napoczęte)", "quantity": 100, "unit": "g", "visibility": "partial"},
+    {"ingredient_id": null, "label": "mleczko zagęszczone w tubce", "quantity": 1, "unit": "pcs", "visibility": "visible"}
+  ]
+}
