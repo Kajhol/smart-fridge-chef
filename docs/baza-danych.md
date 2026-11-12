@@ -1,6 +1,6 @@
 # Baza danych – szkic
 
-**Status: propozycja, do ustalenia z osobą 2 (backend).** Źródło przepisów jest wciąż otwarte (O-003 w [specyfikacji](specyfikacja.md)).
+**Status: propozycja, do ustalenia z osobą 2 (backend).** Zasada wyszukiwania jest przyjęta (D-004 w [specyfikacji](specyfikacja.md)). Źródło przepisów jest wciąż otwarte (O-003), ale słownik jest już zbudowany na Food.com.
 
 ## Zasada
 
@@ -29,9 +29,12 @@ Lodówka w PoC nie jest tabelą: to lista po ekranie korekty, przekazywana w zap
 
 ## Wyszukiwanie
 
+Zasada z decyzji D-004 w [specyfikacji](specyfikacja.md): najpierw twardy filtr po składnikach (brakuje najwyżej `:max_missing`, domyślnie 2), bez embeddingów.
+
 ```sql
 SELECT r.id, r.title,
-       COUNT(f.ingredient_id) * 1.0 / COUNT(*) AS coverage   -- odsetek składników w lodówce
+       COUNT(*) - COUNT(f.ingredient_id)       AS missing,    -- ilu składników brakuje
+       COUNT(f.ingredient_id) * 1.0 / COUNT(*) AS coverage    -- odsetek składników w lodówce
 FROM recipes r
 JOIN recipe_ingredients ri ON ri.recipe_id = r.id
 LEFT JOIN fridge f          ON f.ingredient_id = ri.ingredient_id
@@ -39,11 +42,14 @@ WHERE ri.ingredient_id NOT IN (SELECT ingredient_id FROM pantry_staples)
   AND r.difficulty IN (:allowed_difficulties)
   AND r.id NOT IN (/* przepisy z alergenem usera */)
 GROUP BY r.id
-ORDER BY coverage DESC, r.rating DESC
+HAVING COUNT(*) - COUNT(f.ingredient_id) <= :max_missing
+ORDER BY missing ASC, coverage DESC, r.rating DESC
 LIMIT 20;
 ```
 
-Te ~20 kandydatów trafia do LLM tekstowego, który wybiera 3 i przelicza porcje. Proporcje pochodzą z oryginalnego przepisu, LLM ich nie wymyśla.
+Te ~20 kandydatów trafia do LLM tekstowego, który wybiera 3, przelicza porcje i je opisuje. Proporcje pochodzą z oryginalnego przepisu, LLM ich nie wymyśla. Gdy zapytanie nic nie zwróci, LLM generuje przepis od zera (oznaczony „wygenerowany przez AI”).
+
+Sortowanie najpierw po `missing`, a nie po `coverage`, bo sam odsetek premiuje krótkie przepisy (2 z 3 składników = 67%), a liczba braków mówi użytkownikowi, ile musi dokupić.
 
 ## Uwaga prawna (przy scrapingu)
 
