@@ -1,0 +1,71 @@
+import json
+from types import SimpleNamespace
+
+import pytest
+from pydantic import ValidationError
+
+from smart_fridge_chef.recipes import llm
+from smart_fridge_chef.recipes.schema import RecipeSelection
+
+SELECTION = {"picks": [{"recipe_id": "fc_1001", "description": "Masz jajka i masło."}]}
+
+
+class FakeGeminiModels:
+    def __init__(self, text: str):
+        self.text = text
+        self.calls: list[dict] = []
+
+    def generate_content(self, **kwargs):
+        self.calls.append(kwargs)
+        return SimpleNamespace(text=self.text)
+
+
+class FakeGroqCompletions:
+    def __init__(self, text: str):
+        self.text = text
+        self.calls: list[dict] = []
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=self.text))])
+
+
+def test_gemini_returns_validated_schema():
+    models = FakeGeminiModels(json.dumps(SELECTION))
+    result = llm.generate("prompt", "system", RecipeSelection, "gemini-3.1-flash-lite", SimpleNamespace(models=models))
+
+    assert result.picks[0].recipe_id == "fc_1001"
+    config = models.calls[0]["config"]
+    assert config.temperature == 0
+    assert config.response_json_schema == RecipeSelection.model_json_schema()
+
+
+def test_groq_strips_prefix_and_sends_schema():
+    completions = FakeGroqCompletions(json.dumps(SELECTION))
+    client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    result = llm.generate("prompt", "system", RecipeSelection, "groq/openai/gpt-oss-120b", client)
+
+    assert result.picks[0].description == "Masz jajka i masło."
+    call = completions.calls[0]
+    assert call["model"] == "openai/gpt-oss-120b"
+    assert call["temperature"] == 0
+    assert call["response_format"]["json_schema"]["schema"] == RecipeSelection.model_json_schema()
+    assert call["messages"][0] == {"role": "system", "content": "system"}
+
+
+def test_invalid_response_raises():
+    models = FakeGeminiModels('{"picks": "nie lista"}')
+    with pytest.raises(ValidationError):
+        llm.generate("p", "s", RecipeSelection, "gemini-3.1-flash-lite", SimpleNamespace(models=models))
+
+
+def test_unknown_provider():
+    with pytest.raises(ValueError):
+        llm.generate("p", "s", RecipeSelection, "mistral-large", object())
+
+
+def test_model_from_env(monkeypatch):
+    monkeypatch.setenv("RECIPE_MODEL", "groq/openai/gpt-oss-120b")
+    assert llm.recipe_model() == "groq/openai/gpt-oss-120b"
+    monkeypatch.delenv("RECIPE_MODEL")
+    assert llm.recipe_model() == llm.DEFAULT_MODEL
