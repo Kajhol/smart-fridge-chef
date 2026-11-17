@@ -4,7 +4,14 @@ import pytest
 from pydantic import ValidationError
 
 from smart_fridge_chef.dictionary import load_ingredients
-from smart_fridge_chef.recipes.schema import Allergen, RecipeRequest, RecipeResponse, RecipeSelection
+from smart_fridge_chef.recipes.schema import (
+    Allergen,
+    Recipe,
+    RecipeIngredient,
+    RecipeRequest,
+    RecipeResponse,
+    RecipeSelection,
+)
 from smart_fridge_chef.vision.schema import DetectedItem, ScanResult
 
 
@@ -52,3 +59,14 @@ def test_llm_selection_limited_to_three():
 
 def test_response_limited_to_three_recipes():
     assert RecipeResponse.model_json_schema()["properties"]["recipes"]["maxItems"] == 3
+
+
+def test_recipe_without_servings_keeps_exact_lines():
+    recipe = Recipe(
+        id="fc_1001", source="database", title="Jajecznica", description="Masz jajka.", servings=None,
+        time_min=10, difficulty="easy", kcal_per_serving=210.5,
+        ingredients=[RecipeIngredient(ingredient_id="egg", name_pl="jajko", status="in_fridge")],
+        ingredient_lines=["4 duże jajka"], steps=["Roztrzep jajka."], url=None,
+    )
+    assert recipe.servings is None
+    assert recipe.ingredient_lines == ["4 duże jajka"]

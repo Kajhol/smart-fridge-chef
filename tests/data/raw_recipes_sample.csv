@@ -1,0 +1,8 @@
+name,id,minutes,contributor_id,submitted,tags,nutrition,n_steps,steps,description,ingredients,n_ingredients
+scrambled eggs with chives,1001,10,1,2005-01-01,"['easy', '15-minutes-or-less']","[210.5, 25.0, 2.0, 15.0, 28.0, 30.0, 1.0]",3,"['beat the eggs with milk', 'cook in butter', 'sprinkle with fresh chives']",quick breakfast,"['eggs', 'milk', 'butter', 'fresh chives', 'salt', 'white pepper']",6
+truffle pasta,1002,25,1,2005-01-01,[],"[650.0, 40.0, 5.0, 20.0, 30.0, 50.0, 25.0]",2,"['boil pasta', 'add truffle oil']",,"['spaghetti', 'truffle oil', 'salt']",3
+cheddar omelette,1003,15,1,2005-01-01,[],"[320.0, 30.0, 2.0, 20.0, 40.0, 45.0, 1.0]",2,"['whisk eggs', 'fry with cheese']",,"['large eggs', 'cheddar cheese', 'unsalted butter', 'juice of']",4
+broken row,1004,abc,1,2005-01-01,[],[],1,['x'],,['eggs'],1
+fried eggs,1005,10,1,2005-01-01,['easy'],"[150.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]",1,['cook the eggs'],,"['eggs', 'butter']",2
+boiled eggs,1006,10,1,2005-01-01,['easy'],"[80.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]",1,['cook the eggs'],,"['eggs', 'butter']",2
+poached eggs,1007,10,1,2005-01-01,['easy'],"[90.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]",1,['cook the eggs'],,"['eggs', 'butter']",2

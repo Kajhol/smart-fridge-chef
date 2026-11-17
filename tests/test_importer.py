@@ -1,0 +1,96 @@
+import json
+import sqlite3
+from pathlib import Path
+
+import pytest
+
+from smart_fridge_chef.dictionary import load_ingredients
+from smart_fridge_chef.recipes.importer import (
+    SKIP,
+    build_alias_index,
+    difficulty,
+    format_line,
+    import_recipes,
+    join_key,
+    map_ingredient,
+    parse_servings,
+)
+
+SAMPLE = Path(__file__).parent / "data" / "raw_recipes_sample.csv"
+KARO_SAMPLE = Path(__file__).parent / "data" / "karo_parsed_sample.csv"
+
+
+@pytest.fixture(scope="module")
+def alias_index():
+    return build_alias_index(load_ingredients())
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("eggs", "egg"),
+        ("large eggs", "egg"),
+        ("fresh chives", "chives"),
+        ("unsalted butter", "butter"),
+        ("cucumbers", "cucumber"),
+        ('"confectioners sugar"', "powdered_sugar"),
+        ("white pepper", SKIP),
+        ("juice of", SKIP),
+        ("truffle oil", None),
+    ],
+)
+def test_map_ingredient(alias_index, raw, expected):
+    assert map_ingredient(raw, alias_index) == expected
+
+
+def test_difficulty():
+    assert difficulty(10, 4, 3, []) == "easy"
+    assert difficulty(45, 9, 10, []) == "medium"
+    assert difficulty(45, 9, 10, ["easy"]) == "easy"
+    assert difficulty(120, 5, 5, ["easy"]) == "hard"
+
+
+def test_join_key_ignores_case_and_punctuation():
+    assert join_key("aunt jane s honey  waffles", 653.04) == join_key("Aunt Jane's Honey Waffles!", 653.0)
+
+
+def test_format_line():
+    assert format_line({"quantity": "1/4", "unit": "cup", "name": "olive oil"}) == "1/4 cup olive oil"
+    assert format_line({"quantity": "3", "name": "large eggs"}) == "3 large eggs"
+    item = {"quantity": "1", "unitQuantity": "5 1/2", "unitUnit": "ounce", "unit": "can", "name": "baby corn", "description": "drained"}
+    assert format_line(item) == "1 can (5 1/2 ounce) baby corn, drained"
+    assert format_line({"name": "salt \\u0026 pepper"}) == "salt & pepper"
+
+
+def test_parse_servings():
+    assert parse_servings("4.0") == 4
+    assert parse_servings("") is None
+    assert parse_servings("32767.0") is None
+    assert parse_servings("2.5") is None
+
+
+def test_import_sample(tmp_path):
+    db_path = tmp_path / "recipes.sqlite"
+    report = import_recipes(SAMPLE, KARO_SAMPLE, db_path)
+
+    assert (report.read, report.imported, report.dropped_unmapped, report.dropped_invalid) == (7, 2, 1, 1)
+    assert (report.dropped_no_quantities, report.dropped_no_match, report.with_servings) == (1, 2, 1)
+    assert report.unmapped["spaghetti"] == 1
+
+    db = sqlite3.connect(db_path)
+    recipe = db.execute(
+        "SELECT title, difficulty, kcal_per_serving, url, servings FROM recipes WHERE id = 'fc_1001'"
+    ).fetchone()
+    assert recipe == ("scrambled eggs with chives", "easy", 210.5, "https://www.food.com/recipe/1001", 2)
+
+    lines = json.loads(db.execute("SELECT ingredient_lines FROM recipes WHERE id = 'fc_1001'").fetchone()[0])
+    assert lines[0] == "4 large eggs"
+    assert lines[-1] == "salt & pepper, to taste"
+
+    ingredients = {row[0] for row in db.execute("SELECT ingredient_id FROM recipe_ingredients WHERE recipe_id = 'fc_1001'")}
+    assert ingredients == {"egg", "milk", "butter", "chives", "salt"}
+
+    steps, servings = db.execute("SELECT steps, servings FROM recipes WHERE id = 'fc_1003'").fetchone()
+    assert json.loads(steps) == ["whisk eggs", "fry with cheese"]
+    assert servings is None
+    assert db.execute("SELECT COUNT(*) FROM pantry_staples").fetchone()[0] >= 3

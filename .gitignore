@@ -12,3 +12,7 @@ data/scans/**/*.jpg
 data/scans/**/*.jpeg
 data/scans/**/*.png
 data/scans/**/*.heic
+
+# Przepisy z Food.com: dane bez otwartej licencji, nie commitujemy (D-010)
+data/raw/
+data/*.sqlite

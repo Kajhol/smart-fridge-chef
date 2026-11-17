@@ -1,6 +1,6 @@
 # Baza danych – szkic
 
-**Status: propozycja, do ustalenia z osobą 2 (backend).** Zasada wyszukiwania jest przyjęta (D-004 w [specyfikacji](specyfikacja.md)). Źródło przepisów jest wciąż otwarte (O-003), ale słownik jest już zbudowany na Food.com.
+**Status: propozycja, do ustalenia z osobą 2 (backend).** Zasada wyszukiwania jest przyjęta (D-004 w [specyfikacji](specyfikacja.md)). Źródło przepisów: Food.com, kroki z RAW_recipes (Kaggle) i ilości z Karo8870 (HF) (D-010). Import: `uv run import-recipes` (`src/smart_fridge_chef/recipes/importer.py`).
 
 ## Zasada
 

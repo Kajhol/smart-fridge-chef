@@ -1,4 +1,4 @@
-"""Formaty przepisów (D-004, D-009): wejście POST /recipes, odpowiedź i odpowiedź LLM tekstowego."""
+"""Formaty przepisów (D-004, D-009, D-010): wejście POST /recipes, odpowiedź i odpowiedź LLM tekstowego."""
 
 from typing import Literal
 
@@ -48,8 +48,6 @@ class RecipeRequest(BaseModel):
 class RecipeIngredient(BaseModel):
     ingredient_id: str
     name_pl: str = Field(description="Polish name from the dictionary.")
-    quantity: float | None = Field(description="Amount scaled to the requested servings; null if the source has none.")
-    unit: Unit | None
     status: IngredientStatus
 
 
@@ -63,11 +61,18 @@ class Recipe(BaseModel):
     source: RecipeSource
     title: str
     description: str = Field(description="Why this recipe fits the fridge, in Polish (written by the LLM).")
-    servings: int
+    servings: int | None = Field(
+        description="Servings of the original recipe; null when the source does not say. Amounts are not scaled (D-010).",
+    )
     time_min: int | None
     difficulty: Difficulty
     kcal_per_serving: float | None
-    ingredients: list[RecipeIngredient]
+    ingredients: list[RecipeIngredient] = Field(
+        description="Dictionary ingredients with fridge status, used for matching and the shopping list.",
+    )
+    ingredient_lines: list[str] = Field(
+        description="Exact ingredient lines with amounts from the source, translated into Polish, for display (D-010).",
+    )
     substitutions: list[Substitution] = []
     steps: list[str]
     url: str | None = Field(description="Link to the original recipe.")
@@ -92,9 +97,16 @@ class RecipeSelection(BaseModel):
 
 
 class TranslatedRecipe(BaseModel):
-    """Osobne wywołanie tylko dla wybranych przepisów (R-6): tytuł i kroki z Food.com po polsku."""
+    """Osobne wywołanie tylko dla wybranych przepisów (R-6, D-010): tytuł, kroki i linie składników po polsku."""
 
     title_pl: str = Field(description="Recipe title translated into natural Polish.")
     steps_pl: list[str] = Field(
         description="Recipe steps translated into Polish, one entry per original step, in the same order.",
+    )
+    ingredient_lines_pl: list[str] = Field(
+        description=(
+            "Ingredient lines translated into Polish, one entry per original line, in the same order. "
+            "Keep every number and fraction exactly as given; translate units into Polish words "
+            "(cup = szklanka, tablespoon = łyżka, teaspoon = łyżeczka) without converting amounts."
+        ),
     )

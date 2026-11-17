@@ -1,0 +1,7 @@
+name,calories,servings,ingredients
+Scrambled Eggs With Chives,210.5,2.0,"[{""quantity"": ""4"", ""unit"": ""large"", ""name"": ""eggs""}, {""quantity"": ""1/4"", ""unit"": ""cup"", ""name"": ""milk""}, {""quantity"": ""1"", ""unit"": ""tablespoon"", ""name"": ""butter"", ""description"": ""softened \\u0026 cubed""}, {""quantity"": ""1"", ""unitQuantity"": ""1/2"", ""unitUnit"": ""ounce"", ""unit"": ""package"", ""name"": ""fresh chives""}, {""name"": ""salt \\u0026 pepper"", ""description"": ""to taste""}]"
+Cheddar Omelette,320.0,,"[{""quantity"": ""3"", ""name"": ""large eggs""}, {""quantity"": ""1/2"", ""unit"": ""cup"", ""name"": ""cheddar cheese""}, {""quantity"": ""1"", ""unit"": ""teaspoon"", ""name"": ""unsalted butter""}]"
+Fried Eggs,150.0,1.0,"[{""name"": ""eggs""}, {""quantity"": ""1"", ""unit"": ""teaspoon"", ""name"": ""butter""}]"
+Boiled Eggs,80.0,2.0,"[{""quantity"": ""2"", ""name"": ""eggs""}]"
+Boiled  Eggs!,80.0,4.0,"[{""quantity"": ""4"", ""name"": ""eggs""}]"
+Poached Eggs,91.0,2.0,"[{""quantity"": ""2"", ""name"": ""eggs""}]"

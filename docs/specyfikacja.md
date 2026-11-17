@@ -211,10 +211,10 @@ smart-fridge-chef/
 - **Wejście** `RecipeRequest`: `items` (lista po ekranie korekty, kształt `DetectedItem`; `confidence` opcjonalne, więc przechodzi też pozycja dodana ręcznie) i `profile` (alergeny, wykluczone składniki, maksymalna trudność, maksymalny czas, liczba porcji). JSON, nie multipart. Backend jest bezstanowy: aplikacja wysyła listę i profil za każdym razem.
 - **Wyjście** `RecipeResponse`: do 3 przepisów. Każdy składnik ma status `in_fridge`, `missing` albo `pantry`, więc lista zakupów to filtr po statusie. `candidates_considered` mówi, ile przepisów przeszło filtr SQL.
 - **LLM do wyboru** zwraca tylko `RecipeSelection` (ID przepisu, opis, zamienniki). Resztę przepisu składa kod z bazy i sprawdza, że wybrane ID jest wśród kandydatów.
-- **Tłumaczenie** tytułu i kroków na polski: osobne wywołanie `TranslatedRecipe`, tylko dla wybranych przepisów, nie dla ~20 kandydatów.
+- **Tłumaczenie** tytułu, kroków i linii składników (D-010) na polski: osobne wywołanie `TranslatedRecipe`, tylko dla wybranych przepisów, nie dla ~20 kandydatów.
 - `Allergen` to dokładnie te wartości, które są w słowniku (sprawdza test).
 
-**Odstępstwo od D-004.** Porcje przelicza kod (`quantity * servings / recipe.servings`), a nie LLM. To zwykłe mnożenie: deterministyczne i testowalne, zgodne z zasadą z PDF, że liczby liczy kod.
+**Odstępstwo od D-004** (zastąpione przez D-010). Ilości są dokładne, z danych, i na PoC nie są przeliczane na porcje z profilu. Przeliczanie zostaje w kodzie (nie w LLM), jeśli je dodamy: tylko dla przepisów z liczbą porcji.
 
 **Do ustalenia.**
 
@@ -224,12 +224,32 @@ smart-fridge-chef/
 - Pozycje z `ingredient_id = null` są pomijane przy dopasowaniu.
 - `max_missing` (2) to stała backendu, nie parametr API.
 
+### D-010: Przepisy z Food.com: kroki z RAW_recipes, ilości z Karo8870
+
+- **Data:** 17.11.2026
+- **Autorzy:** Igor, Kajtek
+- **Status: przyjęta** (Igor i Kajtek)
+- **Zamyka:** O-003
+- **Zmienia:** D-009 (porcje, składniki w odpowiedzi)
+
+**Decyzja.** LLM **nie szacuje ilości**. Przepis pokazujemy dokładnie tak, jak w źródle.
+
+- **Kroki, ID, czas, kcal:** `RAW_recipes.csv` z Kaggle (`shuyangli94/food-com-recipes-and-user-interactions`, ok. 231 tys. przepisów). Z ID robimy link do food.com.
+- **Ilości, jednostki, porcje:** `parsed_recipes.csv` z Hugging Face (`Karo8870/food.com-parsed-dataset`, 490 tys. przepisów z Food.com ze składnikami rozbitymi na ilość, jednostkę i nazwę). Ten zbiór nie ma ID, a w 32% przepisów zamiast kroków ma linki do zdjęć, więc nie wystarcza sam.
+- **Łączenie** po nazwie (tylko `[a-z0-9]`, małe litery) i kcal zaokrąglonych do 0,1. Przepis bez jednoznacznej pary odpada. Odpada też przepis, w którym jakiś składnik nie ma ilości (poza solą, pieprzem, wodą i olejem).
+- **Porcje** (1–24) są w ok. połowie przepisów. Przepis bez porcji zostaje: ilości są dokładne, tylko nie wiadomo, na ile osób (`Recipe.servings = null`).
+- **Statusy** `in_fridge`/`missing`/`pantry` liczymy ze składników z RAW_recipes (mapowanie na słownik przy imporcie, D-004). Linie z Karo8870 służą tylko do wyświetlenia (`Recipe.ingredient_lines`), więc nie trzeba ich parować ze składnikami. W ok. 13% przepisów liczba linii różni się od liczby składników (np. „1/3 cup butter or margarine” to jedna linia).
+- **LLM tłumaczy** linie składników na polski w tym samym wywołaniu co tytuł i kroki (`TranslatedRecipe.ingredient_lines_pl`): liczby zostają bez zmian, jednostki po polsku (szklanka, łyżka, łyżeczka), bez przeliczania na g/ml.
+
+**Licencja.** Żaden ze zbiorów nie ma otwartej licencji (RAW_recipes: „Data files © Original Authors”; Karo8870: brak opisu i licencji). Oba to dane z Food.com opublikowane do badań z artykułem: Majumder, Li, Ni, McAuley, *Generating Personalized Recipes from Historical User Preferences*, EMNLP 2019. W projekcie: cytujemy artykuł, podajemy link do obu zbiorów, **danych nie commitujemy** (tylko skrypt importu), przy każdym przepisie jest link do food.com.
+
+**Pokrycie** (pomiar 17.11.2026 na kopii HF `KingName1/food.com`, 87 862 przepisy, bez ID): 7 274 przepisy mają wszystkie składniki w słowniku, z tego 6 624 (91%) łączy się jednoznacznie z Karo8870, a **5 823** ma też ilości. 3 287 z nich ma liczbę porcji. Losowa próba 20 połączonych przepisów: wszystkie to te same dania (te same składniki w tej samej kolejności). Na pełnym RAW_recipes z Kaggle powinno wyjść ok. 2,5 razy więcej.
+
 ## Otwarte pytania
 
 | Nr | Pytanie | Propozycja | Kto / do kiedy |
 |---|---|---|---|
 | O-002 | Które Vision LLM porównujemy? | Po jednym tańszym i mocniejszym od 2–3 dostawców (PDF). Start: `gemini-3.1-flash-lite` (D-008). Dostępne 12.11.2026 w Gemini API m.in. `gemini-3.5-flash-lite`, `gemini-3.6-flash`, `gemini-3.8-flash`, `gemini-4-argon`. Które są w darmowym limicie, trzeba sprawdzić w cenniku. | Zespół |
-| O-003 | Źródło przepisów: RecipeNLG czy Food.com? | Food.com; licencję sprawdzić przed importem (PDF). Słownik jest już zbudowany na Food.com (kopia na Hugging Face: `KingName1/food.com`). | Zespół |
 | O-004 | Jaki jest termin oddania projektu? | Zapytać prowadzącego w następnym mailu. Frontend w TypeScript jest rozstrzygnięty (D-006). | Kajtek |
 | O-005 | Do jakiej rozdzielczości zmniejszamy zdjęcia? | Zmierzyć 1000 i 1500 px na dłuższym boku i wybrać najniższą, przy której etykiety są czytelne | Kajtek |
 | O-006 | Jedno zdjęcie całej lodówki czy strefy: ile zyskujemy? | Eksperyment na tych samych lodówkach: F1, koszt, czas | Kajtek |
@@ -244,4 +264,5 @@ smart-fridge-chef/
 |---|---|---|
 | O-001 | Czy zaczynamy od PoC z dwoma LLM-ami, a o YOLO decydujemy po PoC? | Tak, D-002 (prowadzący: gotowe modele przez API są OK) |
 | O-008 | Kanoniczna jednostka każdego składnika (szt., g, ml) | Pole `unit` w słowniku (`src/smart_fridge_chef/data/ingredients.json`), sprawdzane przez `Ingredient` w `dictionary.py` |
+| O-003 | Źródło przepisów: RecipeNLG czy Food.com? | Food.com: RAW_recipes (Kaggle) + ilości z Karo8870 (HF), D-010 |
 | O-009 | Jak w ewaluacji liczymy pozycje „inny” i produkty widoczne częściowo? | D-003: pole `visibility` w ręcznej liście, pozycje spoza słownika poza F1 |
