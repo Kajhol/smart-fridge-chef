@@ -199,6 +199,31 @@ smart-fridge-chef/
 - Model czasem zwraca ID spoza słownika (np. `eggs` zamiast `egg`). Klient mapuje takie ID przez aliasy ze słownika, a jeśli nic nie pasuje, ustawia `null` i zostawia `label`. Pozycja trafia wtedy do „spoza słownika” (D-003).
 - Inni dostawcy (OpenAI, Anthropic) dochodzą jako kolejne warianty przy porównaniu w O-002. Format wyniku (`ScanResult`) zostaje ten sam.
 
+### D-009: Kontrakt `POST /recipes`
+
+- **Data:** 17.11.2026
+- **Autor:** Igor
+- **Status: do potwierdzenia z zespołem** (szczególnie z Kajtkiem: wejście korzysta z `DetectedItem`)
+- **Doprecyzowuje:** D-004 (kto przelicza porcje), D-005 (nazwa i kształt endpointu)
+
+**Decyzja.** Schematy są w `src/smart_fridge_chef/recipes/schema.py`, w tym samym stylu co `vision/schema.py` (Pydantic, `Field(description=...)`, wspólny typ `Unit`).
+
+- **Wejście** `RecipeRequest`: `items` (lista po ekranie korekty, kształt `DetectedItem`; `confidence` opcjonalne, więc przechodzi też pozycja dodana ręcznie) i `profile` (alergeny, wykluczone składniki, maksymalna trudność, maksymalny czas, liczba porcji). JSON, nie multipart. Backend jest bezstanowy: aplikacja wysyła listę i profil za każdym razem.
+- **Wyjście** `RecipeResponse`: do 3 przepisów. Każdy składnik ma status `in_fridge`, `missing` albo `pantry`, więc lista zakupów to filtr po statusie. `candidates_considered` mówi, ile przepisów przeszło filtr SQL.
+- **LLM do wyboru** zwraca tylko `RecipeSelection` (ID przepisu, opis, zamienniki). Resztę przepisu składa kod z bazy i sprawdza, że wybrane ID jest wśród kandydatów.
+- **Tłumaczenie** tytułu i kroków na polski: osobne wywołanie `TranslatedRecipe`, tylko dla wybranych przepisów, nie dla ~20 kandydatów.
+- `Allergen` to dokładnie te wartości, które są w słowniku (sprawdza test).
+
+**Odstępstwo od D-004.** Porcje przelicza kod (`quantity * servings / recipe.servings`), a nie LLM. To zwykłe mnożenie: deterministyczne i testowalne, zgodne z zasadą z PDF, że liczby liczy kod.
+
+**Do ustalenia.**
+
+- Dieta: słownik nie ma flagi wegetariańskiej. Na PoC zastępuje ją `excluded_ingredients`.
+- Kalorie (O-011): słownik nie ma kcal. Na PoC `kcal_per_serving` z Food.com, pole może być `null`.
+- Ilość w lodówce na PoC się nie liczy, tylko obecność (D-004).
+- Pozycje z `ingredient_id = null` są pomijane przy dopasowaniu.
+- `max_missing` (2) to stała backendu, nie parametr API.
+
 ## Otwarte pytania
 
 | Nr | Pytanie | Propozycja | Kto / do kiedy |
