@@ -1,4 +1,5 @@
 import json
+import re
 import sqlite3
 from pathlib import Path
 
@@ -7,6 +8,8 @@ import pytest
 from smart_fridge_chef.dictionary import load_ingredients
 from smart_fridge_chef.recipes.importer import (
     SKIP,
+    SKIPPED_ALLERGENS,
+    SKIPPED_RAW,
     build_alias_index,
     difficulty,
     format_line,
@@ -14,6 +17,7 @@ from smart_fridge_chef.recipes.importer import (
     join_key,
     map_ingredient,
     parse_servings,
+    skipped_allergens,
 )
 
 SAMPLE = Path(__file__).parent / "data" / "raw_recipes_sample.csv"
@@ -62,6 +66,11 @@ def test_format_line():
     assert format_line({"name": "salt \\u0026 pepper"}) == "salt & pepper"
 
 
+def test_skipped_allergens():
+    assert skipped_allergens("celery seed") == {"celery"}
+    assert skipped_allergens("ground cloves") == set()
+
+
 def test_parse_servings():
     assert parse_servings("4.0") == 4
     assert parse_servings("") is None
@@ -94,3 +103,24 @@ def test_import_sample(tmp_path):
     assert json.loads(steps) == ["whisk eggs", "fry with cheese"]
     assert servings is None
     assert db.execute("SELECT COUNT(*) FROM pantry_staples").fetchone()[0] >= 3
+
+    allergens = {r[0]: set() for r in db.execute("SELECT id FROM recipes")}
+    for recipe_id, allergen in db.execute("SELECT recipe_id, allergen FROM recipe_allergens"):
+        allergens[recipe_id].add(allergen)
+    assert allergens["fc_1001"] == {"eggs", "milk"}
+    assert allergens["fc_1003"] == {"eggs", "milk", "celery"}  # celery salt jest pomijana, ale alergen zostaje
+
+
+def test_skipped_items_with_allergen_keep_it():
+    """Pozycja pomijana przy mapowaniu nie może zgubić alergenu (audyt M2)."""
+    keywords = re.compile(r"celery|mustard|sesame|soy|peanut|nut|almond|fish|anchov|shrimp|wheat|flour|milk|cream|cheese|egg")
+    risky = {raw for raw in SKIPPED_RAW if keywords.search(raw)} - {"cream of tartar", "nutmeg"}
+    assert risky <= set(SKIPPED_ALLERGENS)
+
+
+def test_audit_finds_no_leaks_in_sample(tmp_path):
+    from smart_fridge_chef.recipes.audit import audit
+
+    db_path = tmp_path / "recipes.sqlite"
+    import_recipes(SAMPLE, KARO_SAMPLE, db_path)
+    assert audit(db_path) == {}
