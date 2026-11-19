@@ -7,18 +7,28 @@ from typing import Annotated
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from PIL import Image, UnidentifiedImageError
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
+from smart_fridge_chef.dictionary import load_ingredients
 from smart_fridge_chef.vision.client import DEFAULT_MODEL, scan
-from smart_fridge_chef.vision.schema import Photo, ScanResult, Zone
+from smart_fridge_chef.vision.schema import Photo, ScanResult, Unit, Zone
 
 load_dotenv()
 
 VISION_MODEL = os.getenv("VISION_MODEL", DEFAULT_MODEL)
 MAX_PHOTOS = 8
 MAX_PHOTO_BYTES = 15 * 1024 * 1024
+INGREDIENTS = load_ingredients()
 
 app = FastAPI(title="Smart Fridge Chef")
+
+
+class IngredientOption(BaseModel):
+    """Pozycja słownika do wyboru w aplikacji (ekran korekty), bez aliasów i alergenów."""
+
+    id: str
+    name_pl: str
+    unit: Unit
 
 
 def is_image(data: bytes) -> bool:
@@ -33,6 +43,11 @@ def is_image(data: bytes) -> bool:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "model": VISION_MODEL}
+
+
+@app.get("/ingredients")
+def ingredients() -> list[IngredientOption]:
+    return [IngredientOption(id=item.id, name_pl=item.name_pl, unit=item.unit) for item in INGREDIENTS.values()]
 
 
 @app.post("/scan")

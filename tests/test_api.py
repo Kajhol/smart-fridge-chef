@@ -39,6 +39,16 @@ def test_health():
     assert response.json()["status"] == "ok"
 
 
+def test_ingredients_lists_whole_dictionary_without_aliases():
+    response = client.get("/ingredients")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == len(api.INGREDIENTS)
+    egg = next(item for item in body if item["id"] == "egg")
+    assert egg == {"id": "egg", "name_pl": "jajko", "unit": "pcs"}
+
+
 def test_scan_returns_scan_result_and_passes_zones(fake_scan):
     response = client.post("/scan", files=upload("a.jpg", "b.jpg"), data={"zones": ["door", "extra"]})
 
