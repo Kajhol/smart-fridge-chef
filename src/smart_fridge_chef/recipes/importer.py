@@ -11,7 +11,6 @@ import json
 import re
 import sqlite3
 from collections import defaultdict
-import sys
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -214,7 +213,8 @@ def import_recipes(
     ingredients = load_ingredients()
     alias_index = build_alias_index(ingredients)
     report = ImportReport()
-    csv.field_size_limit(sys.maxsize)
+    # Nie sys.maxsize: na Windowsie C long ma 32 bity i field_size_limit rzuca OverflowError.
+    csv.field_size_limit(2**31 - 1)
 
     # 1. RAW_recipes: przepisy, których wszystkie składniki są w słowniku.
     candidates = []
