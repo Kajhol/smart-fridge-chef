@@ -1,7 +1,7 @@
 import { File } from 'expo-file-system';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
-const HEALTH_TIMEOUT_MS = 5_000;
+const SHORT_TIMEOUT_MS = 5_000;
 const SCAN_TIMEOUT_MS = 90_000;
 
 export type Health = {
@@ -29,6 +29,7 @@ export type IngredientOption = {
   id: string;
   name_pl: string;
   unit: Unit;
+  custom: boolean;
 };
 
 export type ZonePhoto = {
@@ -72,11 +73,23 @@ async function errorMessage(response: Response): Promise<string> {
 }
 
 export function checkHealth(): Promise<Health> {
-  return request<Health>('/health', {}, HEALTH_TIMEOUT_MS);
+  return request<Health>('/health', {}, SHORT_TIMEOUT_MS);
 }
 
 export function getIngredients(): Promise<IngredientOption[]> {
-  return request<IngredientOption[]>('/ingredients', {}, HEALTH_TIMEOUT_MS);
+  return request<IngredientOption[]>('/ingredients', {}, SHORT_TIMEOUT_MS);
+}
+
+export function addIngredient(name_pl: string, unit: Unit): Promise<IngredientOption> {
+  return request<IngredientOption>(
+    '/ingredients',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name_pl, unit }),
+    },
+    SHORT_TIMEOUT_MS,
+  );
 }
 
 export function scanFridge(photos: ZonePhoto[]): Promise<ScanResult> {

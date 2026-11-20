@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
-import { Button, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import type { Confidence, DetectedItem, IngredientOption, Unit } from './api';
-import IngredientPicker from './IngredientPicker';
+import IngredientSheet from './IngredientSheet';
+import { colors, font, radius, spacing } from './theme';
+import { AppButton, Badge, Card } from './ui';
 
 // Pozycja na ekranie korekty. Kształt jak DetectedItem; confidence nie ma, gdy dodano ją ręcznie (D-009).
 export type FridgeItem = {
@@ -62,16 +64,17 @@ type Props = {
   items: FridgeItem[];
   ingredients: IngredientOption[];
   onChange: (items: FridgeItem[]) => void;
+  onIngredientCreated: (ingredient: IngredientOption) => void;
 };
 
-export default function ItemsEditor({ items, ingredients, onChange }: Props) {
-  // null: wybór zamknięty, 'new': dodawanie produktu, inaczej key pozycji, której zmieniamy składnik.
-  const [picking, setPicking] = useState<string | null>(null);
+// Co jest otwarte w oknie wyszukiwania: dodawanie nowej pozycji albo zmiana istniejącej.
+type Sheet = { mode: 'new' } | { mode: 'edit'; key: string };
 
-  const namesById = useMemo(
-    () => new Map(ingredients.map((ingredient) => [ingredient.id, ingredient.name_pl])),
-    [ingredients],
-  );
+export default function ItemsEditor({ items, ingredients, onChange, onIngredientCreated }: Props) {
+  const [sheet, setSheet] = useState<Sheet | null>(null);
+  const editedItem = sheet?.mode === 'edit' ? items.find((item) => item.key === sheet.key) : undefined;
+
+  const byId = useMemo(() => new Map(ingredients.map((ingredient) => [ingredient.id, ingredient])), [ingredients]);
   const unknownCount = items.filter((item) => item.ingredient_id === null).length;
 
   function update(key: string, changes: Partial<FridgeItem>) {
@@ -82,56 +85,81 @@ export default function ItemsEditor({ items, ingredients, onChange }: Props) {
     onChange(items.filter((item) => item.key !== key));
   }
 
+  // Wybór ze słownika zmienia też nazwę: "owoce w folii" staje się "mandarynka".
   function pick(ingredient: IngredientOption) {
-    if (picking === 'new') {
-      onChange([
-        ...items,
-        { key: newKey(), ingredient_id: ingredient.id, label: ingredient.name_pl, quantity: 1, unit: ingredient.unit },
-      ]);
-    } else if (picking !== null) {
-      update(picking, { ingredient_id: ingredient.id, unit: ingredient.unit });
+    const changes = { ingredient_id: ingredient.id, label: ingredient.name_pl, unit: ingredient.unit };
+    if (sheet?.mode === 'new') {
+      onChange([...items, { key: newKey(), quantity: 1, ...changes }]);
+    } else if (sheet?.mode === 'edit') {
+      update(sheet.key, changes);
     }
-    setPicking(null);
+    setSheet(null);
   }
 
   return (
     <View style={styles.container}>
-      {items.map((item) => (
-        <View key={item.key} style={styles.row}>
-          <View style={styles.rowTop}>
-            <Text style={styles.label}>{item.label}</Text>
-            <QuantityInput value={item.quantity} onChange={(quantity) => update(item.key, { quantity })} />
-            <Text style={styles.unit}>{UNIT_LABELS[item.unit]}</Text>
-          </View>
-          <View style={styles.rowBottom}>
-            <Text style={item.ingredient_id === null ? styles.unknown : styles.dictionary}>
-              {item.ingredient_id === null
-                ? 'spoza słownika'
-                : `słownik: ${namesById.get(item.ingredient_id) ?? item.ingredient_id}`}
-            </Text>
-            <Pressable onPress={() => setPicking(item.key)}>
-              <Text style={styles.action}>{item.ingredient_id === null ? 'Przypisz' : 'Zmień'}</Text>
-            </Pressable>
-            <Pressable onPress={() => remove(item.key)}>
-              <Text style={[styles.action, styles.remove]}>Usuń</Text>
-            </Pressable>
-          </View>
-          {picking === item.key && (
-            <IngredientPicker ingredients={ingredients} onPick={pick} onCancel={() => setPicking(null)} />
-          )}
-        </View>
-      ))}
-
       {unknownCount > 0 && (
-        <Text style={styles.unknown}>
-          Pozycji spoza słownika: {unknownCount}. Przepisy ich nie uwzględnią, więc przypisz je albo usuń.
-        </Text>
+        <View style={styles.warning}>
+          <Text style={styles.warningText}>
+            Pozycji spoza słownika: {unknownCount}. Przepisy ich nie uwzględnią, więc przypisz je albo usuń.
+          </Text>
+        </View>
       )}
 
-      {picking === 'new' ? (
-        <IngredientPicker ingredients={ingredients} onPick={pick} onCancel={() => setPicking(null)} />
-      ) : (
-        <Button title="Dodaj produkt" onPress={() => setPicking('new')} disabled={ingredients.length === 0} />
+      {items.map((item) => {
+        const ingredient = item.ingredient_id === null ? undefined : byId.get(item.ingredient_id);
+        return (
+          <Card key={item.key} style={item.ingredient_id === null && styles.unknownCard}>
+            <View style={styles.rowTop}>
+              <Pressable style={styles.names} onPress={() => setSheet({ mode: 'edit', key: item.key })} hitSlop={6}>
+                <Text style={styles.label}>
+                  {item.label} <Text style={styles.pencil}>✎</Text>
+                </Text>
+                {ingredient && ingredient.name_pl !== item.label && (
+                  <Text style={styles.dictionary}>w słowniku: {ingredient.name_pl}</Text>
+                )}
+              </Pressable>
+              <View style={styles.amount}>
+                <QuantityInput value={item.quantity} onChange={(quantity) => update(item.key, { quantity })} />
+                <Text style={styles.unit}>{UNIT_LABELS[item.unit]}</Text>
+              </View>
+            </View>
+
+            <View style={styles.rowBottom}>
+              <View style={styles.badges}>
+                {item.ingredient_id === null && <Badge label="spoza słownika" tone="warning" />}
+                {item.confidence === 'low' && <Badge label="niepewne" />}
+                {ingredient?.custom && <Badge label="dodany" tone="info" />}
+              </View>
+              <Pressable onPress={() => setSheet({ mode: 'edit', key: item.key })} hitSlop={8}>
+                <Text style={styles.action}>{item.ingredient_id === null ? 'Przypisz' : 'Zmień'}</Text>
+              </Pressable>
+              <Pressable onPress={() => remove(item.key)} hitSlop={8}>
+                <Text style={[styles.action, styles.remove]}>Usuń</Text>
+              </Pressable>
+            </View>
+
+          </Card>
+        );
+      })}
+
+      <AppButton
+        title="+ Dodaj produkt"
+        variant="secondary"
+        onPress={() => setSheet({ mode: 'new' })}
+        disabled={ingredients.length === 0}
+      />
+
+      {sheet && (
+        <IngredientSheet
+          title={sheet.mode === 'new' ? 'Dodaj produkt' : 'Co to jest?'}
+          initialQuery={editedItem?.label ?? ''}
+          defaultUnit={editedItem?.unit ?? 'pcs'}
+          ingredients={ingredients}
+          onPick={pick}
+          onCreated={onIngredientCreated}
+          onClose={() => setSheet(null)}
+        />
       )}
     </View>
   );
@@ -139,53 +167,78 @@ export default function ItemsEditor({ items, ingredients, onChange }: Props) {
 
 const styles = StyleSheet.create({
   container: {
-    alignSelf: 'stretch',
-    gap: 10,
+    gap: spacing.md,
   },
-  row: {
-    gap: 4,
-    paddingBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+  warning: {
+    padding: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.warningSoft,
+  },
+  warningText: {
+    color: colors.warning,
+    fontSize: font.small,
+  },
+  unknownCard: {
+    borderColor: colors.warningSoft,
+    borderWidth: 2,
   },
   rowTop: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: spacing.md,
+  },
+  names: {
+    flex: 1,
+    gap: 2,
+  },
+  label: {
+    fontSize: font.body,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  pencil: {
+    color: colors.muted,
+    fontWeight: '400',
+  },
+  dictionary: {
+    fontSize: font.small,
+    color: colors.muted,
+  },
+  amount: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  quantity: {
+    width: 64,
+    backgroundColor: colors.background,
+    borderRadius: radius.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    textAlign: 'right',
+    fontSize: font.body,
+    color: colors.text,
+  },
+  unit: {
+    width: 30,
+    color: colors.muted,
   },
   rowBottom: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
+    gap: spacing.lg,
   },
-  label: {
+  badges: {
     flex: 1,
-    fontSize: 16,
-  },
-  quantity: {
-    width: 64,
-    borderWidth: 1,
-    borderColor: '#999',
-    borderRadius: 6,
-    paddingVertical: 4,
-    paddingHorizontal: 6,
-    textAlign: 'right',
-  },
-  unit: {
-    width: 28,
-  },
-  dictionary: {
-    flex: 1,
-    color: '#666',
-  },
-  unknown: {
-    flex: 1,
-    color: '#b45309',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
   },
   action: {
-    color: '#2563eb',
+    color: colors.primary,
+    fontWeight: '600',
   },
   remove: {
-    color: '#c00',
+    color: colors.danger,
   },
 });

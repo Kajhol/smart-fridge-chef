@@ -1,15 +1,18 @@
 import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Button, Image, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { getIngredients, scanFridge, type IngredientOption, type Zone, type ZonePhoto } from './api';
 import ItemsEditor, { toFridgeItems, type FridgeItem } from './ItemsEditor';
+import PhotoPreview from './PhotoPreview';
+import { colors, font, radius, spacing } from './theme';
+import { AppButton, Card, StepProgress } from './ui';
 
 // Kolejność stref ze specyfikacji (D-001).
-const STEPS: { zone: Zone; title: string }[] = [
-  { zone: 'door', title: 'drzwi' },
-  { zone: 'shelves_upper', title: 'półki górne' },
-  { zone: 'shelves_lower', title: 'półki dolne' },
+const STEPS: { zone: Zone; title: string; hint: string }[] = [
+  { zone: 'door', title: 'Drzwi', hint: 'Otwórz lodówkę i sfotografuj półki na drzwiach.' },
+  { zone: 'shelves_upper', title: 'Półki górne', hint: 'Zrób zdjęcie górnych półek, tak żeby było widać etykiety.' },
+  { zone: 'shelves_lower', title: 'Półki dolne', hint: 'Na koniec dolne półki. Jeśli możesz, wysuń szufladę.' },
 ];
 
 const PICKER_OPTIONS: ImagePicker.ImagePickerOptions = {
@@ -21,31 +24,38 @@ const PICKER_OPTIONS: ImagePicker.ImagePickerOptions = {
 
 type Source = 'camera' | 'library';
 
+function sortByName(list: IngredientOption[]): IngredientOption[] {
+  return [...list].sort((a, b) => a.name_pl.localeCompare(b.name_pl, 'pl'));
+}
+
 export default function ScanScreen() {
   const [photos, setPhotos] = useState<ZonePhoto[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [items, setItems] = useState<FridgeItem[] | null>(null);
   const [ingredients, setIngredients] = useState<IngredientOption[]>([]);
+  const [preview, setPreview] = useState<Zone | null>(null);
 
   // Słownik pobieramy raz, przy pierwszym pokazaniu ekranu. Bez niego działa skan,
   // tylko nie da się dodać produktu ani przypisać pozycji spoza słownika.
   useEffect(() => {
     getIngredients()
-      .then((list) => setIngredients([...list].sort((a, b) => a.name_pl.localeCompare(b.name_pl, 'pl'))))
+      .then((list) => setIngredients(sortByName(list)))
       .catch((caught) => setError(`Nie udało się pobrać słownika: ${caught instanceof Error ? caught.message : caught}`));
   }, []);
 
   const step = photos.length;
+  const previewPhoto = photos.find((photo) => photo.zone === preview);
   const allTaken = step >= STEPS.length;
 
-  async function addPhoto(source: Source) {
+  // Zwraca uri zdjęcia albo null, gdy użytkownik anulował lub nie dał dostępu do aparatu.
+  async function pickPhoto(source: Source): Promise<string | null> {
     setError(null);
     if (source === 'camera') {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
       if (!permission.granted) {
         setError('Bez dostępu do aparatu nie zrobię zdjęcia. Włącz go w ustawieniach telefonu.');
-        return;
+        return null;
       }
     }
 
@@ -53,15 +63,31 @@ export default function ScanScreen() {
       source === 'camera'
         ? await ImagePicker.launchCameraAsync(PICKER_OPTIONS)
         : await ImagePicker.launchImageLibraryAsync(PICKER_OPTIONS);
-    if (picked.canceled) {
+    return picked.canceled ? null : picked.assets[0].uri;
+  }
+
+  async function addPhoto(source: Source) {
+    const uri = await pickPhoto(source);
+    if (!uri) {
       return;
     }
-
-    const asset = picked.assets[0];
     setPhotos((previous) =>
-      previous.length >= STEPS.length
-        ? previous
-        : [...previous, { zone: STEPS[previous.length].zone, uri: asset.uri }],
+      previous.length >= STEPS.length ? previous : [...previous, { zone: STEPS[previous.length].zone, uri }],
+    );
+  }
+
+  // Z podglądu: nowe zdjęcie tej samej strefy w miejsce starego. Podgląd zostaje otwarty i pokazuje nowe.
+  async function replacePhoto(zone: Zone, source: Source) {
+    const uri = await pickPhoto(source);
+    if (!uri) {
+      return;
+    }
+    setPhotos((previous) => previous.map((photo) => (photo.zone === zone ? { zone, uri } : photo)));
+  }
+
+  function onIngredientCreated(ingredient: IngredientOption) {
+    setIngredients((previous) =>
+      previous.some((item) => item.id === ingredient.id) ? previous : sortByName([...previous, ingredient]),
     );
   }
 
@@ -86,40 +112,99 @@ export default function ScanScreen() {
 
   return (
     <View style={styles.container}>
-      {allTaken ? (
-        <Text style={styles.step}>Wszystkie strefy gotowe</Text>
-      ) : (
+      {!items && (
+        <Card>
+          <StepProgress labels={STEPS.map((s) => s.title)} current={step} />
+          {allTaken ? (
+            <View style={styles.stepText}>
+              <Text style={styles.heading}>Wszystkie strefy gotowe</Text>
+              <Text style={styles.hint}>Dotknij miniatury, żeby obejrzeć zdjęcie albo zrobić je ponownie.</Text>
+            </View>
+          ) : (
+            <>
+              <View style={styles.stepText}>
+                <Text style={styles.kicker}>
+                  Krok {step + 1} z {STEPS.length}
+                </Text>
+                <Text style={styles.heading}>{STEPS[step].title}</Text>
+                <Text style={styles.hint}>{STEPS[step].hint}</Text>
+              </View>
+              <View style={styles.row}>
+                <AppButton title="Zrób zdjęcie" onPress={() => addPhoto('camera')} style={styles.grow} />
+                <AppButton title="Z galerii" variant="secondary" onPress={() => addPhoto('library')} style={styles.grow} />
+              </View>
+            </>
+          )}
+
+          <View style={styles.thumbnails}>
+            {STEPS.map(({ zone, title }) => {
+              const photo = photos.find((p) => p.zone === zone);
+              return (
+                <View key={zone} style={styles.thumbnailBox}>
+                  {photo ? (
+                    <Pressable onPress={() => setPreview(zone)} disabled={loading}>
+                      <Image source={{ uri: photo.uri }} style={styles.thumbnail} />
+                    </Pressable>
+                  ) : (
+                    <View style={[styles.thumbnail, styles.thumbnailEmpty]} />
+                  )}
+                  <Text style={styles.thumbnailLabel}>{title}</Text>
+                </View>
+              );
+            })}
+          </View>
+
+          {step > 0 && !loading && (
+            <AppButton
+              title="Usuń ostatnie zdjęcie"
+              variant="ghost"
+              onPress={() => setPhotos((previous) => previous.slice(0, -1))}
+            />
+          )}
+
+          {allTaken && <AppButton title={loading ? 'Analizuję…' : 'Analizuj zdjęcia'} onPress={analyze} loading={loading} />}
+        </Card>
+      )}
+
+      {loading && (
+        <Card style={styles.loadingCard}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.hint}>Model ogląda zdjęcia. Zwykle trwa to kilka sekund.</Text>
+        </Card>
+      )}
+
+      {error && (
+        <Card style={styles.errorCard}>
+          <Text style={styles.errorText}>{error}</Text>
+        </Card>
+      )}
+
+      {items && (
         <>
-          <Text style={styles.step}>
-            Krok {step + 1}/{STEPS.length}: {STEPS[step].title}
-          </Text>
-          <Button title="Zrób zdjęcie" onPress={() => addPhoto('camera')} />
-          <Button title="Z galerii" onPress={() => addPhoto('library')} />
+          <View style={styles.resultHeader}>
+            <Text style={styles.heading}>Produkty w lodówce</Text>
+            <Text style={styles.hint}>
+              Znaleziono {items.length}. Popraw ilości i nazwy, zanim poszukamy przepisów.
+            </Text>
+          </View>
+          <ItemsEditor
+            items={items}
+            ingredients={ingredients}
+            onChange={setItems}
+            onIngredientCreated={onIngredientCreated}
+          />
+          <AppButton title="Nowy skan" variant="secondary" onPress={reset} />
         </>
       )}
 
-      <View style={styles.thumbnails}>
-        {photos.map((photo) => (
-          <Image key={photo.zone} source={{ uri: photo.uri }} style={styles.thumbnail} />
-        ))}
-      </View>
-
-      {step > 0 && !loading && !items && (
-        <Button title="Usuń ostatnie zdjęcie" onPress={() => setPhotos((previous) => previous.slice(0, -1))} />
-      )}
-
-      {allTaken && !items && (
-        <Button title={loading ? 'Analizuję…' : 'Analizuj'} onPress={analyze} disabled={loading} />
-      )}
-      {loading && <ActivityIndicator size="large" />}
-      {error && <Text style={styles.error}>{error}</Text>}
-
-      {items && (
-        <View style={styles.result}>
-          <Text style={styles.step}>Produkty w lodówce ({items.length})</Text>
-          <ItemsEditor items={items} ingredients={ingredients} onChange={setItems} />
-          <Button title="Nowy skan" onPress={reset} />
-        </View>
+      {previewPhoto && (
+        <PhotoPreview
+          title={STEPS.find((s) => s.zone === previewPhoto.zone)?.title ?? previewPhoto.zone}
+          uri={previewPhoto.uri}
+          onRetake={() => replacePhoto(previewPhoto.zone, 'camera')}
+          onPickFromLibrary={() => replacePhoto(previewPhoto.zone, 'library')}
+          onClose={() => setPreview(null)}
+        />
       )}
     </View>
   );
@@ -127,28 +212,70 @@ export default function ScanScreen() {
 
 const styles = StyleSheet.create({
   container: {
-    gap: 12,
-    alignItems: 'center',
+    gap: spacing.lg,
   },
-  step: {
-    fontSize: 18,
+  stepText: {
+    gap: spacing.xs,
+  },
+  kicker: {
+    fontSize: font.small,
     fontWeight: '600',
+    color: colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  heading: {
+    fontSize: font.heading,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  hint: {
+    fontSize: font.body,
+    color: colors.muted,
+  },
+  row: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  grow: {
+    flex: 1,
   },
   thumbnails: {
     flexDirection: 'row',
-    gap: 8,
+    gap: spacing.sm,
+  },
+  thumbnailBox: {
+    flex: 1,
+    gap: spacing.xs,
   },
   thumbnail: {
-    width: 80,
-    height: 110,
-    borderRadius: 6,
+    width: '100%',
+    aspectRatio: 3 / 4,
+    borderRadius: radius.sm,
+    backgroundColor: colors.background,
   },
-  error: {
-    color: '#c00',
+  thumbnailEmpty: {
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: colors.border,
+  },
+  thumbnailLabel: {
+    fontSize: font.small,
+    color: colors.muted,
     textAlign: 'center',
   },
-  result: {
-    gap: 6,
-    alignSelf: 'stretch',
+  loadingCard: {
+    alignItems: 'center',
+  },
+  errorCard: {
+    backgroundColor: colors.dangerSoft,
+    borderColor: colors.dangerSoft,
+  },
+  errorText: {
+    color: colors.danger,
+    fontSize: font.body,
+  },
+  resultHeader: {
+    gap: spacing.xs,
   },
 });
