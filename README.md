@@ -24,16 +24,63 @@ uv run fastapi dev src/smart_fridge_chef/api.py
 ```
 
 - `http://127.0.0.1:8000/docs`: strona do testowania. Przy `POST /scan` kliknij „Try it out”, dodaj zdjęcia i do każdego wpisz strefę (`door`, `shelves_upper`, `shelves_lower`, `extra`), w tej samej kolejności.
-- `GET /health`: czy serwer działa i jakiego modelu używa.
 - Model zmienia się zmienną `VISION_MODEL` w `.env` (domyślnie `gemini-3.1-flash-lite`).
 
-**Z telefonu (Expo Go):** telefon i laptop muszą być w tej samej sieci Wi-Fi. Uruchom serwer na wszystkich interfejsach:
+| Endpoint | Co robi |
+|---|---|
+| `GET /health` | Czy serwer działa i jakiego modelu używa |
+| `POST /scan` | Zdjęcia (`photos`) ze strefami (`zones`) → lista produktów (`ScanResult`) |
+| `GET /ingredients` | Słownik składników i produkty dodane z aplikacji (pole `custom`) |
+| `POST /ingredients` | Dodaje produkt do słownika z aplikacji (D-011), zapis w `data/custom_ingredients.json` (poza gitem) |
+| `POST /scans` | Zapisuje skan do ewaluacji (D-003) w kolejnym `data/scans/scan_NNN/` i zwraca metryki |
+
+## Aplikacja mobilna (Expo)
+
+Aplikacja jest w `mobile/` (Expo SDK 58, TypeScript). Testujemy ją na telefonie w [Expo Go](https://expo.dev/go). Potrzebny jest [Node.js](https://nodejs.org/) (LTS).
+
+**1. Backend na wszystkich interfejsach**, żeby telefon go widział (z głównego folderu repo):
 
 ```
 uv run fastapi dev src/smart_fridge_chef/api.py --host 0.0.0.0
 ```
 
-W aplikacji jako adres backendu wpisz IP laptopa w sieci lokalnej (Windows: `ipconfig`, pole „IPv4 Address”), np. `http://192.168.1.23:8000`, a nie `localhost`. Za pierwszym razem Windows może zapytać o dostęp przez zaporę. Zezwól dla sieci prywatnej.
+Za pierwszym razem Windows może zapytać o dostęp przez zaporę. Zezwól dla sieci prywatnej.
+
+**2. Adres backendu.** Utwórz plik `mobile/.env.local` (jest w `.gitignore`, każdy ma swój) z IP laptopa w sieci lokalnej (Windows: `ipconfig`, pole „IPv4 Address”):
+
+```
+EXPO_PUBLIC_API_URL=http://192.168.1.23:8000
+```
+
+Nie `localhost`, bo dla telefonu `localhost` to sam telefon. Nie wpisuj tu kluczy API: zmienne `EXPO_PUBLIC_*` trafiają do aplikacji i każdy może je odczytać (D-005).
+
+**3. Aplikacja:**
+
+```
+cd mobile
+npm install
+npx expo start --clear
+```
+
+Na telefonie zeskanuj kod QR (Android: w Expo Go, iPhone: aparatem). Telefon musi być w tej samej sieci Wi-Fi co laptop. `--clear` jest potrzebne przy pierwszym uruchomieniu i po zmianie `.env.local`, później wystarczy `npx expo start`.
+
+**Co robi aplikacja:** sprawdza połączenie z backendem, prowadzi przez zdjęcia trzech stref (D-001; aparat albo galeria), wysyła je do `POST /scan` i pokazuje listę do korekty: ilości, usuwanie, zmiana nazwy przez wyszukiwarkę słownika, dodawanie produktów (D-006, D-011). Po korekcie skan można zapisać do ewaluacji (niżej).
+
+**Jeśli nie działa:**
+
+- „Brak EXPO_PUBLIC_API_URL”: `.env.local` nie jest w `mobile/` albo Expo nie został uruchomiony z `--clear`.
+- „Brak odpowiedzi z … po 5 s”: otwórz `http://<IP>:8000/health` w przeglądarce telefonu. Jeśli też nie działa, to sieć (inne Wi-Fi, zapora albo serwer bez `--host 0.0.0.0`), a nie aplikacja.
+
+## Zbieranie skanów do ewaluacji (D-003)
+
+Po korekcie listy w aplikacji kliknij „Przygotuj zapis do ewaluacji”, przy każdym produkcie zaznacz, czy widać go na zdjęciach (`widać` / `częściowo` / `schowane`), dopisz produkty schowane i kliknij „Zapisz skan”. Backend zapisze w kolejnym `data/scans/scan_NNN/`:
+
+- zdjęcia (poza gitem, jak w `scan_001`),
+- `ground_truth.json`: lista po korekcie, czyli wzorzec (commitujemy),
+- `pred_…_app_….json`: odpowiedź modelu bez poprawek,
+- `metrics_…_app_….json`: recall, precision, F1, halucynacje, duplikaty i czas.
+
+Listę sprawdzaj przy otwartej lodówce, a ilości przepisuj z opakowań. Lista powstaje z poprawiania odpowiedzi modelu, więc łatwo przepuścić jego błędy (reguły w D-003). Ten sam skan można potem przeliczyć innym modelem: `uv run scan data/scans/scan_NNN --model ...`.
 
 ## Baza przepisów (Food.com)
 
@@ -49,6 +96,10 @@ uv run import-recipes data/raw/RAW_recipes.csv data/raw/parsed_recipes.csv
 
 Powstaje `data/recipes.sqlite` (tylko przepisy, których wszystkie składniki są w słowniku i które mają ilości) i raport `data/recipes.report.json` z najczęstszymi składnikami spoza słownika. Źródło: Majumder i in., *Generating Personalized Recipes from Historical User Preferences*, EMNLP 2019.
 
+`uv run audit-allergens` sprawdza gotową bazę: wypisuje linie składników, które sugerują alergen, którego przepis nie ma w tabeli `recipe_allergens` (wynik czyta człowiek, są fałszywe alarmy).
+
 ## Dodawanie paczek
 
 Nie używamy `pip install`. Nową paczkę dodajemy przez `uv add <paczka>` (albo `uv add --dev <paczka>` dla narzędzi tylko do pracy nad kodem) i commitujemy razem `pyproject.toml` i `uv.lock`.
+
+W aplikacji (`mobile/`) paczki dodajemy przez `npx expo install <paczka>`, a nie `npm install <paczka>`: Expo dobiera wtedy wersję zgodną z SDK. Commitujemy `package.json` i `package-lock.json`.
