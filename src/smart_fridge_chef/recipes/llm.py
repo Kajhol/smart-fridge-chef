@@ -1,6 +1,7 @@
 """LLM tekstowy dla przepisów: wybór dostawcy po nazwie modelu, odpowiedź zawsze walidowana schematem Pydantic."""
 
 import os
+import time
 from typing import Any, TypeVar
 
 from google import genai
@@ -15,6 +16,15 @@ OLLAMA_PREFIX = "ollama/"
 OLLAMA_BASE_URL = "http://localhost:11434/v1"  # lokalny model, np. ollama/qwen2.5:3b; adres zmienia OLLAMA_BASE_URL
 
 Schema = TypeVar("Schema", bound=BaseModel)
+
+RETRIES = 3  # przy przeciążeniu dostawcy (429, 5xx) ponawiamy z rosnącą przerwą
+RETRY_DELAY_S = 2.0
+
+
+def transient(error: Exception) -> bool:
+    """Błąd chwilowy: limit albo przeciążenie po stronie dostawcy. Zły JSON czy zły klucz nie są chwilowe."""
+    status = getattr(error, "code", None) or getattr(error, "status_code", None)
+    return isinstance(status, int) and (status == 429 or status >= 500)
 
 
 def recipe_model() -> str:
@@ -97,9 +107,18 @@ def generate(
     `ollama/<model>` do lokalnej Ollamy (np. ollama/qwen2.5:3b)."""
     model = model or recipe_model()
     if model.startswith("gemini-"):
-        return call_gemini(prompt, system_prompt, schema, model, client, usage)
-    if model.startswith(GROQ_PREFIX):
-        return call_groq(prompt, system_prompt, schema, model, client, usage)
-    if model.startswith(OLLAMA_PREFIX):
-        return call_ollama(prompt, system_prompt, schema, model, client, usage)
-    raise ValueError(f"Unknown provider for model: {model}")
+        call = call_gemini
+    elif model.startswith(GROQ_PREFIX):
+        call = call_groq
+    elif model.startswith(OLLAMA_PREFIX):
+        call = call_ollama
+    else:
+        raise ValueError(f"Unknown provider for model: {model}")
+    for attempt in range(RETRIES):
+        try:
+            return call(prompt, system_prompt, schema, model, client, usage)
+        except Exception as error:
+            if attempt == RETRIES - 1 or not transient(error):
+                raise
+            time.sleep(RETRY_DELAY_S * 2**attempt)
+    raise AssertionError("unreachable")

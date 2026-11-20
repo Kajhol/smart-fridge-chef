@@ -107,3 +107,38 @@ def test_ollama_needs_no_api_key(monkeypatch):
 
     monkeypatch.setenv("RECIPE_MODEL", "ollama/qwen2.5:3b")
     assert router.get_llm() is not None
+
+
+def test_transient_errors_are_retried(monkeypatch):
+    monkeypatch.setattr(llm, "RETRY_DELAY_S", 0)
+    attempts = []
+
+    class Overloaded(Exception):
+        code = 503
+
+    def generate_content(**kwargs):
+        attempts.append(1)
+        if len(attempts) < 3:
+            raise Overloaded("high demand")
+        return SimpleNamespace(text=json.dumps(SELECTION))
+
+    client = SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))
+    assert llm.generate("p", "s", RecipeSelection, "gemini-3.1-flash-lite", client).picks
+    assert len(attempts) == 3
+
+
+def test_permanent_errors_are_not_retried(monkeypatch):
+    monkeypatch.setattr(llm, "RETRY_DELAY_S", 0)
+    attempts = []
+
+    class BadKey(Exception):
+        code = 400
+
+    def generate_content(**kwargs):
+        attempts.append(1)
+        raise BadKey("invalid key")
+
+    client = SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))
+    with pytest.raises(BadKey):
+        llm.generate("p", "s", RecipeSelection, "gemini-3.1-flash-lite", client)
+    assert len(attempts) == 1
