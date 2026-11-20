@@ -101,3 +101,13 @@ def test_load_scan_skips_zero_quantity(tmp_path):
     ]}), encoding="utf-8")
     scan_id, items = benchmark.load_scan(path)
     assert scan_id == "s1" and [i.label for i in items] == ["jajka"]
+
+
+def test_api_keys_are_redacted_from_errors(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_secret_123456")
+    calls = fake(RecipeSelection=RuntimeError("bad key gsk_secret_123456"))
+    try:
+        calls("p", "s", __import__("smart_fridge_chef.recipes.schema", fromlist=["x"]).RecipeSelection)
+    except RuntimeError:
+        pass
+    assert "gsk_secret" not in calls.errors[0] and "<GROQ_API_KEY>" in calls.errors[0]

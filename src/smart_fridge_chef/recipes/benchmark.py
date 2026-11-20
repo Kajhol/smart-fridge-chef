@@ -7,6 +7,7 @@ Do `docs/wyniki.md` przepisujemy tylko liczby z podsumowania.
 
 import argparse
 import json
+import os
 import re
 import sqlite3
 import time
@@ -49,6 +50,18 @@ PROFILES = {
 }
 
 
+SECRET_ENV = ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GROQ_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY")
+
+
+def redact(text: str) -> str:
+    """Komunikat błędu bez kluczy z .env: wyniki ewaluacji się wkleja i przesyła dalej."""
+    for name in SECRET_ENV:
+        value = os.getenv(name)
+        if value and len(value) > 8:
+            text = text.replace(value, f"<{name}>")
+    return text
+
+
 @dataclass
 class Calls:
     """Opakowanie LLM do ewaluacji: liczy wywołania, błędy i tokeny."""
@@ -64,7 +77,7 @@ class Calls:
         try:
             return llm.generate(prompt, system_prompt, schema, self.model, self.client, self.usage)
         except Exception as error:
-            self.errors.append(f"{schema.__name__}: {type(error).__name__}: {error}"[:300])
+            self.errors.append(redact(f"{schema.__name__}: {type(error).__name__}: {error}")[:300])
             raise
 
     def take(self) -> dict:
