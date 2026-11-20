@@ -98,6 +98,8 @@ uv run import-recipes data/raw/RAW_recipes.csv data/raw/parsed_recipes.csv --int
 
 Endpoint `POST /recipes` czyta tę bazę (ścieżkę zmienia `RECIPES_DB` w `.env`). Bez bazy zwraca 503.
 
+Z kluczem dla modelu z `RECIPE_MODEL` (`GEMINI_API_KEY` albo `GROQ_API_KEY` dla `groq/...`) LLM wybiera 3 z 20 najlepszych kandydatów, opisuje je i tłumaczy na polski, a gdy żaden przepis nie pasuje, pisze własny (`source: "ai_generated"`). Bez klucza albo przy błędzie LLM endpoint zwraca ranking z SQL po angielsku (D-013).
+
 `uv run audit-allergens` sprawdza gotową bazę: wypisuje linie składników, które sugerują alergen, którego przepis nie ma w tabeli `recipe_allergens` (wynik czyta człowiek, są fałszywe alarmy).
 
 ## Dodawanie paczek
