@@ -1,18 +1,27 @@
-"""POST /recipes (D-009) bez LLM: top 3 kandydatów z rankingu, tytuły i kroki jeszcze po angielsku (LLM w M3)."""
+"""POST /recipes (D-009, D-012, D-013): kandydaci z SQL, wybór i tłumaczenie przez LLM, bez LLM ranking z SQL."""
 
 import json
 import os
 import sqlite3
 from pathlib import Path
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
-from smart_fridge_chef.recipes.schema import Recipe, RecipeIngredient, RecipeRequest, RecipeResponse
+from smart_fridge_chef.recipes import llm
+from smart_fridge_chef.recipes.chef import LLM, SELECTION_POOL, suggest
+from smart_fridge_chef.recipes.schema import (
+    Recipe,
+    RecipeIngredient,
+    RecipeRequest,
+    RecipeResponse,
+)
 from smart_fridge_chef.recipes.search import Candidate, find_candidates, fridge_ids
 
 DEFAULT_DB = Path(__file__).parents[3] / "data" / "recipes.sqlite"
 RECIPES_DB: Path | None = None  # testy podmieniają; inaczej RECIPES_DB z .env albo DEFAULT_DB
-TOP_N = 3
+# Klucz w .env dla dostawcy z RECIPE_MODEL; bez klucza endpoint działa jak w M2 (bez LLM)
+API_KEYS = {"gemini-": ("GEMINI_API_KEY", "GOOGLE_API_KEY"), llm.GROQ_PREFIX: ("GROQ_API_KEY",)}
 
 router = APIRouter()
 
@@ -20,6 +29,15 @@ router = APIRouter()
 def database_path() -> Path:
     # Czytane przy zapytaniu, nie przy imporcie modułu: api.py woła load_dotenv() dopiero po importach.
     return RECIPES_DB or Path(os.getenv("RECIPES_DB") or DEFAULT_DB)
+
+
+def get_llm() -> LLM | None:
+    """LLM do wyboru i tłumaczenia albo None, gdy nie ma klucza. Testy podmieniają przez dependency_overrides."""
+    model = llm.recipe_model()
+    keys = next((names for prefix, names in API_KEYS.items() if model.startswith(prefix)), ())
+    if not any(os.getenv(name) for name in keys):
+        return None
+    return lambda prompt, system_prompt, schema: llm.generate(prompt, system_prompt, schema, model)
 
 
 def connect(path: Path) -> sqlite3.Connection:
@@ -30,7 +48,7 @@ def connect(path: Path) -> sqlite3.Connection:
 
 
 def describe(candidate: Candidate, missing_pl: list[str]) -> str:
-    """Opis bez LLM. W M3 zastąpi go opis z RecipeSelection."""
+    """Opis z szablonu: zostaje, gdy LLM nie działa albo jego opis nie przeszedł kontroli."""
     text = f"Masz {candidate.n_in_fridge} z {candidate.n_main} głównych składników."
     if missing_pl:
         text += f" Brakuje: {', '.join(missing_pl)}."
@@ -74,13 +92,14 @@ def build_recipe(db: sqlite3.Connection, candidate: Candidate, fridge: set[str])
 
 
 @router.post("/recipes")
-def recipes(request: RecipeRequest) -> RecipeResponse:
+def recipes(request: RecipeRequest, model: Annotated[LLM | None, Depends(get_llm)]) -> RecipeResponse:
     db = connect(database_path())
     try:
         candidates = find_candidates(db, request.items, request.profile)
         fridge = set(fridge_ids(request.items))
+        pool = [build_recipe(db, c, fridge) for c in candidates[:SELECTION_POOL]]
         return RecipeResponse(
-            recipes=[build_recipe(db, c, fridge) for c in candidates[:TOP_N]],
+            recipes=suggest(db, pool, request.items, request.profile, model),
             candidates_considered=len(candidates),
         )
     finally:

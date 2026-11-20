@@ -272,7 +272,7 @@ smart-fridge-chef/
 - **Status: przyjęta** (Igor; do wiadomości zespołu)
 - **Doprecyzowuje:** D-004 (filtr i ranking), D-009 (endpoint), D-011 (pozycje `custom_…`)
 
-**Decyzja.** `find_candidates` (`src/smart_fridge_chef/recipes/search.py`) to jedno zapytanie SQL, bez LLM. Endpoint `POST /recipes` (`recipes/router.py`, podpięty w `api.py` jedną linią) zwraca 3 najlepsze przepisy w formacie `RecipeResponse`. W M3 LLM wybiera spośród tych samych kandydatów i tłumaczy; do tego czasu tytuł, kroki i linie składników są po angielsku, a opis jest z szablonu („Masz 3 z 4 głównych składników. Brakuje: cebula.”).
+**Decyzja.** `find_candidates` (`src/smart_fridge_chef/recipes/search.py`) to jedno zapytanie SQL, bez LLM. Endpoint `POST /recipes` (`recipes/router.py`, podpięty w `api.py` jedną linią) zwraca 3 najlepsze przepisy w formacie `RecipeResponse`. W M3 LLM wybiera spośród tych samych kandydatów i tłumaczy (D-013); bez LLM tytuł, kroki i linie składników są po angielsku, a opis jest z szablonu („Masz 3 z 4 głównych składników. Brakuje: cebula.”).
 
 - **Lodówka** to `ingredient_id` z listy. Pozycje z `null` i dodane z aplikacji (`custom_…`) nie pasują do żadnego przepisu, ale nie powodują błędu.
 - **Filtr:** najwyżej 2 braki (`MAX_MISSING`), przyprawy z `pantry_staples` się nie liczą. Przepis musi mieć co najmniej 3 główne składniki i co najmniej 2 z lodówki, żeby nie wygrywały „jajko na twardo” ani „microwave cleaner”. Odpadają przepisy z alergenem z profilu (`recipe_allergens`), z wykluczonym składnikiem, trudniejsze niż `max_difficulty` i dłuższe niż `max_time_min` (przepis bez czasu przechodzi).
@@ -283,6 +283,25 @@ smart-fridge-chef/
 **Pomiar** (20.11.2026, kopia HF, 5 823 przepisy, lodówka ze `scan_001`): 215 kandydatów bez ograniczeń, 38 przy alergii na jajka, 24 przy mleku, glutenie i 30 min. Zapytanie trwa ok. 20 ms.
 
 **Ograniczenie.** Ilość w lodówce się nie liczy, tylko obecność (D-004): jedno jajko wystarczy do przepisu na sześć.
+
+### D-013: LLM w `POST /recipes`: wybór, tłumaczenie, przepis od AI
+
+- **Data:** 20.11.2026
+- **Autor:** Igor
+- **Status: przyjęta** (Igor; do wiadomości zespołu)
+- **Doprecyzowuje:** D-004 (LLM tylko wybiera i opisuje), D-009 (kontrakt bez zmian), D-010 (tłumaczenie linii), D-012
+
+**Decyzja.** Kod w `src/smart_fridge_chef/recipes/chef.py`, model z `RECIPE_MODEL` przez `recipes/llm.py`. LLM wybiera, opisuje i tłumaczy; kod sprawdza każdą odpowiedź. Kontrakt `RecipeResponse` się nie zmienia.
+
+- **Wybór:** LLM dostaje 20 najlepszych kandydatów z rankingu SQL (ID, tytuł, czas, trudność, składniki z lodówki i brakujące), lodówkę i listę zakazanych składników. Zwraca `RecipeSelection`. Kod odrzuca ID spoza kandydatów i powtórzenia, a brakujące miejsca dopełnia rankingiem z SQL. Zamiennik przechodzi tylko dla składnika, który w tym przepisie naprawdę brakuje.
+- **Alergeny:** kandydaci są już bez alergenów z profilu (SQL, D-012), więc LLM nie może wybrać przepisu z alergenem. Tekst od LLM (opis, zamiennik, przepis od AI) przechodzi przez filtr słów: nazwy po polsku i angielsku składników z alergenem albo wykluczonych, z odmianą („jajko” łapie „jajka”). Trafienie oznacza opis z szablonu, usunięty zamiennik albo odrzucony przepis od AI. To zabezpieczenie dodatkowe i heurystyka: nie łapie wymian w rdzeniu („masło”, „na maśle”).
+- **Tłumaczenie:** osobne wywołanie `TranslatedRecipe` dla każdego z 3 przepisów, równolegle. Gdy zmieni się liczba kroków albo linii, zostaje oryginał. Linia składnika, w której zmieniły się liczby, zostaje po angielsku: ilość jest ważniejsza niż język.
+- **Przepis od AI**, gdy 0 kandydatów: LLM dostaje tylko dozwolone składniki (słownikowe z lodówki i przyprawy, bez alergenów i wykluczeń) i zwraca `GeneratedRecipe` z ID użytych składników. Kod odrzuca przepis ze składnikiem spoza listy, z zakazanym słowem, trudniejszy albo dłuższy niż w profilu. Wtedy lista jest pusta. Przepis ma `source: "ai_generated"`, `id` i `url` = `null`, porcje z profilu, wszystkie składniki `in_fridge` albo `pantry`. Produkty `custom_…` (D-011) nie trafiają do listy dozwolonych, bo nie znamy ich alergenów.
+- **Bez LLM:** bez klucza w `.env` (`GEMINI_API_KEY`/`GOOGLE_API_KEY` albo `GROQ_API_KEY`) i przy każdym błędzie LLM (limit, timeout, zły JSON) odpowiedź jest jak w M2: ranking z SQL, tekst po angielsku, opis z szablonu. Endpoint nie zwraca 500 z powodu LLM.
+
+**Pomiar** (20.11.2026, kopia HF, lodówka ze `scan_001`): prompt wyboru ma ok. 3 700 znaków przy 20 kandydatach, tłumaczenie 600–1 300 znaków na przepis, czyli 4 wywołania na zapytanie. Czas i koszt z prawdziwym modelem mierzymy w M4.
+
+**Później:** przepis od AI z produktów `custom_…`; zamienniki alergenów z kuratorowanej tabeli (opcja 2 z rozmowy o zamiennikach); cache tłumaczeń po ID przepisu.
 
 ## Otwarte pytania
 

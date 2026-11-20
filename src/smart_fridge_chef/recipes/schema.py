@@ -110,3 +110,21 @@ class TranslatedRecipe(BaseModel):
             "(cup = szklanka, tablespoon = łyżka, teaspoon = łyżeczka) without converting amounts."
         ),
     )
+
+
+class GeneratedRecipe(BaseModel):
+    """Przepis od LLM, gdy żaden przepis z bazy nie przeszedł filtra (D-013). Kod sprawdza składniki i alergeny."""
+
+    title_pl: str = Field(description="Short name of the dish in Polish.")
+    description: str = Field(description="One or two sentences in Polish: what the dish is and why it uses this fridge.")
+    ingredient_ids: list[str] = Field(
+        min_length=1,
+        description="IDs of every ingredient the recipe uses, only from the allowed list given in the prompt.",
+    )
+    ingredient_lines_pl: list[str] = Field(
+        min_length=1,
+        description="Ingredient lines with amounts in Polish, e.g. '3 jajka', '1 łyżka masła'. Only allowed ingredients.",
+    )
+    steps_pl: list[str] = Field(min_length=1, description="Cooking steps in Polish, one action per entry.")
+    time_min: int = Field(gt=0, le=240, description="Total time in minutes.")
+    difficulty: Difficulty

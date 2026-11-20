@@ -39,6 +39,14 @@ def db_path(tmp_path_factory):
     return path
 
 
+@pytest.fixture(autouse=True)
+def no_llm():
+    """Endpoint bez LLM (jak w M2), nawet gdy w .env jest klucz: testy nie wołają API."""
+    api.app.dependency_overrides[router.get_llm] = lambda: None
+    yield
+    api.app.dependency_overrides.pop(router.get_llm, None)
+
+
 @pytest.fixture
 def db(db_path):
     import sqlite3
