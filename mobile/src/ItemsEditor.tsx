@@ -93,9 +93,10 @@ export default function ItemsEditor({ items, ingredients, onChange, onIngredient
     onChange(items.filter((item) => item.key !== key));
   }
 
-  // Wybór ze słownika zmienia też nazwę: "owoce w folii" staje się "mandarynka".
-  function pick(ingredient: IngredientOption) {
-    const changes = { ingredient_id: ingredient.id, label: ingredient.name_pl, unit: ingredient.unit };
+  // Wybór ze słownika zmienia też nazwę ("owoce w folii" -> "mandarynka"), chyba że to zamiennik:
+  // wtedy zostaje wpisana nazwa ("mandarynka"), a id i jednostka są z zamiennika (pomarańcza).
+  function pick(ingredient: IngredientOption, label?: string) {
+    const changes = { ingredient_id: ingredient.id, label: label ?? ingredient.name_pl, unit: ingredient.unit };
     if (sheet?.mode === 'new') {
       onChange([...items, { key: newKey(), quantity: 1, ...changes }]);
     } else if (sheet?.mode === 'edit') {

@@ -4,6 +4,7 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL;
 const SHORT_TIMEOUT_MS = 5_000;
 const SCAN_TIMEOUT_MS = 90_000;
 const SAVE_TIMEOUT_MS = 30_000;
+const RECIPES_TIMEOUT_MS = 30_000;
 
 export type Health = {
   status: string;
@@ -62,6 +63,66 @@ export type ScanMetrics = {
 export type SavedScan = {
   scan_id: string;
   metrics: ScanMetrics;
+};
+
+// --- Przepisy: kontrakt z src/smart_fridge_chef/recipes/schema.py (D-009, D-010, D-012) ---
+
+export type Allergen =
+  | 'celery'
+  | 'crustaceans'
+  | 'eggs'
+  | 'fish'
+  | 'gluten'
+  | 'milk'
+  | 'mustard'
+  | 'nuts'
+  | 'peanuts'
+  | 'sesame'
+  | 'soy'
+  | 'sulphites';
+export type Difficulty = 'easy' | 'medium' | 'hard';
+export type IngredientStatus = 'in_fridge' | 'missing' | 'pantry';
+
+export type RecipeFridgeItem = {
+  ingredient_id: string | null;
+  label: string;
+  quantity: number;
+  unit: Unit;
+};
+
+export type UserProfile = {
+  allergens: Allergen[];
+  excluded_ingredients: string[];
+  max_difficulty: Difficulty;
+  max_time_min: number | null;
+  servings: number;
+};
+
+export type RecipeIngredient = {
+  ingredient_id: string;
+  name_pl: string;
+  status: IngredientStatus;
+};
+
+export type Recipe = {
+  id: string | null;
+  source: 'database' | 'ai_generated';
+  title: string;
+  description: string;
+  servings: number | null;
+  time_min: number | null;
+  difficulty: Difficulty;
+  kcal_per_serving: number | null;
+  ingredients: RecipeIngredient[];
+  ingredient_lines: string[];
+  substitutions: { missing_id: string; suggestion: string }[];
+  steps: string[];
+  url: string | null;
+};
+
+export type RecipeResponse = {
+  recipes: Recipe[];
+  candidates_considered: number;
 };
 
 export type ZonePhoto = {
@@ -153,4 +214,16 @@ export function saveScan(
     body.append('seconds', String(seconds));
   }
   return request<SavedScan>('/scans', { method: 'POST', body }, SAVE_TIMEOUT_MS);
+}
+
+export function findRecipes(items: RecipeFridgeItem[], profile: UserProfile): Promise<RecipeResponse> {
+  return request<RecipeResponse>(
+    '/recipes',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items, profile }),
+    },
+    RECIPES_TIMEOUT_MS,
+  );
 }

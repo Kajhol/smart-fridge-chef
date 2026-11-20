@@ -15,12 +15,7 @@ const UNITS: { unit: Unit; label: string }[] = [
 
 // "Jabłko" i "jablko" mają pasować do siebie: małe litery, bez ogonków.
 function simplify(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/ł/g, 'l')
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .trim();
+  return text.toLowerCase().replace(/ł/g, 'l').normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
 }
 
 type Props = {
@@ -28,7 +23,8 @@ type Props = {
   initialQuery: string;
   defaultUnit: Unit;
   ingredients: IngredientOption[];
-  onPick: (ingredient: IngredientOption) => void;
+  // label: nazwa, która ma zostać na liście (zamiennik, np. "mandarynka" jako pomarańcza). Brak = nazwa ze słownika.
+  onPick: (ingredient: IngredientOption, label?: string) => void;
   onCreated: (ingredient: IngredientOption) => void;
   onClose: () => void;
 };
@@ -48,6 +44,8 @@ export default function IngredientSheet({
   const [unit, setUnit] = useState<Unit>(defaultUnit);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Nazwa wpisana przed "Wybierz zamiennik". Gdy jest, szukamy zamiennika, a ta nazwa zostaje na liście (D-003).
+  const [substituteFor, setSubstituteFor] = useState<string | null>(null);
 
   const needle = simplify(query);
   const matches = needle
@@ -55,6 +53,20 @@ export default function IngredientSheet({
     : [];
   const exactMatch = ingredients.some((ingredient) => simplify(ingredient.name_pl) === needle);
   const name = query.trim();
+
+  function startSubstitute() {
+    setSubstituteFor(name);
+    setQuery('');
+  }
+
+  function cancelSubstitute() {
+    setQuery(substituteFor ?? '');
+    setSubstituteFor(null);
+  }
+
+  function choose(ingredient: IngredientOption) {
+    onPick(ingredient, substituteFor ?? undefined);
+  }
 
   async function create() {
     setCreating(true);
@@ -76,15 +88,22 @@ export default function IngredientSheet({
         <SafeAreaView style={styles.screen} edges={['top', 'bottom']}>
           <KeyboardAvoidingView behavior="padding" style={styles.flex}>
             <View style={styles.header}>
-              <Text style={styles.title}>{title}</Text>
-              <Pressable onPress={onClose} hitSlop={12}>
-                <Text style={styles.close}>Zamknij</Text>
+              <Text style={styles.title} numberOfLines={1}>
+                {substituteFor ? `Zamiennik dla „${substituteFor}”` : title}
+              </Text>
+              <Pressable onPress={substituteFor ? cancelSubstitute : onClose} hitSlop={12}>
+                <Text style={styles.close}>{substituteFor ? 'Wróć' : 'Zamknij'}</Text>
               </Pressable>
             </View>
+            {substituteFor && (
+              <Text style={styles.small}>
+                Na liście zostanie „{substituteFor}”, a przepisy potraktują produkt jak wybrany zamiennik.
+              </Text>
+            )}
 
             <TextInput
               style={styles.input}
-              placeholder="Wpisz nazwę, np. mandarynka"
+              placeholder={substituteFor ? 'Szukaj zamiennika, np. pomarańcza' : 'Wpisz nazwę, np. mandarynka'}
               placeholderTextColor={colors.muted}
               value={query}
               onChangeText={setQuery}
@@ -100,18 +119,24 @@ export default function IngredientSheet({
                 <Pressable
                   key={ingredient.id}
                   style={({ pressed }) => [styles.option, pressed && styles.optionPressed]}
-                  onPress={() => onPick(ingredient)}
+                  onPress={() => choose(ingredient)}
                 >
                   <Text style={styles.optionText}>{ingredient.name_pl}</Text>
                   {ingredient.custom && <Badge label="dodany" tone="info" />}
                 </Pressable>
               ))}
 
-              {needle !== '' && !exactMatch && (
+              {needle !== '' && !exactMatch && !substituteFor && (
                 <View style={styles.create}>
                   <Text style={styles.sectionTitle}>
                     {matches.length === 0 ? 'Nie ma tego w słowniku' : 'Nie ma dokładnie takiej pozycji'}
                   </Text>
+                  <AppButton title="Wybierz zamiennik ze słownika" onPress={startSubstitute} />
+                  <Text style={styles.small}>
+                    Np. mandarynki jako pomarańcza: nazwa „{name}” zostanie, a przepisy będą działać od razu.
+                  </Text>
+
+                  <Text style={[styles.sectionTitle, styles.spaced]}>Nie ma zamiennika?</Text>
                   <Text style={styles.hint}>W czym liczysz „{name}”?</Text>
                   <View style={styles.units}>
                     {UNITS.map((option) => (
@@ -126,7 +151,12 @@ export default function IngredientSheet({
                       </Pressable>
                     ))}
                   </View>
-                  <AppButton title={`Dodaj „${name}” do słownika`} onPress={create} loading={creating} />
+                  <AppButton
+                    title={`Dodaj „${name}” do słownika`}
+                    variant="secondary"
+                    onPress={create}
+                    loading={creating}
+                  />
                   <Text style={styles.small}>
                     Nowy produkt od razu pojawi się na liście, ale przepisy go nie znają, dopóki zespół nie dopisze mu
                     angielskich nazw.
@@ -159,6 +189,8 @@ const styles = StyleSheet.create({
     paddingTop: spacing.lg,
   },
   title: {
+    flex: 1,
+    marginRight: spacing.md,
     fontSize: font.heading,
     fontWeight: '700',
     color: colors.text,
@@ -237,6 +269,9 @@ const styles = StyleSheet.create({
   unitTextActive: {
     color: colors.primary,
     fontWeight: '600',
+  },
+  spaced: {
+    marginTop: spacing.md,
   },
   small: {
     fontSize: font.small,

@@ -15,6 +15,8 @@ import {
 import EvaluationResult from './EvaluationResult';
 import ItemsEditor, { toFridgeItems, type FridgeItem } from './ItemsEditor';
 import PhotoPreview from './PhotoPreview';
+import { DEFAULT_PROFILE } from './profile';
+import RecipesSection from './RecipesSection';
 import { colors, font, radius, spacing } from './theme';
 import { AppButton, Card, StepProgress } from './ui';
 
@@ -254,6 +256,8 @@ export default function ScanScreen() {
             onIngredientCreated={onIngredientCreated}
             showVisibility={evaluating}
           />
+
+          {!evaluating && <RecipesSection items={items} profile={DEFAULT_PROFILE} />}
 
           {saved ? (
             <EvaluationResult saved={saved} namesById={namesById} />

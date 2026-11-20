@@ -41,13 +41,14 @@ export function Card({ children, style }: { children: ReactNode; style?: StylePr
   return <View style={[styles.card, style]}>{children}</View>;
 }
 
-type BadgeTone = 'neutral' | 'warning' | 'info' | 'success';
+type BadgeTone = 'neutral' | 'warning' | 'info' | 'success' | 'danger';
 
 const badgeColors: Record<BadgeTone, { background: string; text: string }> = {
   neutral: { background: colors.background, text: colors.muted },
   warning: { background: colors.warningSoft, text: colors.warning },
   info: { background: colors.infoSoft, text: colors.info },
   success: { background: colors.primarySoft, text: colors.primary },
+  danger: { background: colors.dangerSoft, text: colors.danger },
 };
 
 export function Badge({ label, tone = 'neutral' }: { label: string; tone?: BadgeTone }) {
