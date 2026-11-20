@@ -36,6 +36,9 @@ SKIPPED_RAW = frozenset({
     "salt and pepper", "salt & pepper",
 })
 
+# Pominięte pozycje, które niosą alergen: przepis zostaje, ale alergen trafia do recipe_allergens.
+SKIPPED_ALLERGENS = {"celery salt": ("celery",), "celery seed": ("celery",)}
+
 # Porcje spoza tego zakresu w Karo8870 to śmieci (np. 32767), traktujemy jak brak.
 SERVINGS_RANGE = (1, 24)
 
@@ -64,6 +67,11 @@ CREATE TABLE recipe_ingredients (
     PRIMARY KEY (recipe_id, ingredient_id)
 );
 CREATE TABLE pantry_staples (ingredient_id TEXT PRIMARY KEY REFERENCES ingredients(id));
+CREATE TABLE recipe_allergens (
+    recipe_id TEXT NOT NULL REFERENCES recipes(id),
+    allergen TEXT NOT NULL,
+    PRIMARY KEY (recipe_id, allergen)
+);
 CREATE INDEX recipe_ingredients_by_ingredient ON recipe_ingredients(ingredient_id);
 """
 
@@ -124,6 +132,11 @@ def map_ingredient(raw: str, alias_index: dict[str, str]) -> str | None:
         if singular and singular in alias_index:
             return alias_index[singular]
     return None
+
+
+def skipped_allergens(raw: str) -> set[str]:
+    text = raw.strip().strip('"').lower()
+    return {a for name, allergens in SKIPPED_ALLERGENS.items() if name in text for a in allergens}
 
 
 def difficulty(minutes: int, n_ingredients: int, n_steps: int, tags: list[str]) -> str:
@@ -237,23 +250,27 @@ def import_recipes(
 
             mapped: dict[str, str] = {}
             unmapped = []
+            allergens: set[str] = set()
             for raw in raw_ingredients:
                 ingredient_id = map_ingredient(raw, alias_index)
                 if ingredient_id is None:
                     unmapped.append(raw.strip().lower())
-                elif ingredient_id != SKIP:
+                elif ingredient_id == SKIP:
+                    allergens |= skipped_allergens(raw)
+                else:
                     mapped.setdefault(ingredient_id, raw)
+                    allergens.update(ingredients[ingredient_id].allergens)
             if unmapped or not mapped:
                 report.dropped_unmapped += 1
                 report.unmapped.update(unmapped)
                 continue
-            candidates.append((row, minutes, raw_ingredients, steps, tags, kcal, mapped))
+            candidates.append((row, minutes, raw_ingredients, steps, tags, kcal, mapped, allergens))
 
     # 2. Karo8870: ilości i porcje, łączone po nazwie i kcal. Niejednoznaczne trafienie odrzucamy.
     quantities = load_quantities(quantities_path, {join_key(c[0]["name"], c[5]) for c in candidates})
 
     db = create_db(db_path, ingredients)
-    for row, minutes, raw_ingredients, steps, tags, kcal, mapped in candidates:
+    for row, minutes, raw_ingredients, steps, tags, kcal, mapped, allergens in candidates:
         matches = quantities.get(join_key(row["name"], kcal), [])
         if len(matches) != 1:
             report.dropped_no_match += 1
@@ -287,6 +304,9 @@ def import_recipes(
         db.executemany(
             "INSERT OR IGNORE INTO recipe_ingredients VALUES (?, ?, ?)",
             [(recipe_id, ingredient_id, raw) for ingredient_id, raw in mapped.items()],
+        )
+        db.executemany(
+            "INSERT OR IGNORE INTO recipe_allergens VALUES (?, ?)", [(recipe_id, a) for a in sorted(allergens)],
         )
         report.imported += 1
         if limit and report.imported >= limit:
