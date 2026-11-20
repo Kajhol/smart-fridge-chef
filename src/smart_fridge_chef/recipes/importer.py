@@ -39,6 +39,10 @@ SKIPPED_RAW = frozenset({
 # Pominięte pozycje, które niosą alergen: przepis zostaje, ale alergen trafia do recipe_allergens.
 SKIPPED_ALLERGENS = {"celery salt": ("celery",), "celery seed": ("celery",)}
 
+# Ocena przepisu to średnia ważona (bayesowska): przy kilku ocenach ciągnie do średniej całej bazy,
+# żeby przepis z jedną piątką nie wygrywał z przepisem z setką ocen 4,8.
+RATING_PRIOR_WEIGHT = 5
+
 # Porcje spoza tego zakresu w Karo8870 to śmieci (np. 32767), traktujemy jak brak.
 SERVINGS_RANGE = (1, 24)
 
@@ -58,7 +62,7 @@ CREATE TABLE recipes (
     id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT, steps TEXT NOT NULL,
     raw_ingredients TEXT NOT NULL, time_min INTEGER, difficulty TEXT NOT NULL,
     kcal_per_serving REAL, rating REAL, source TEXT NOT NULL, url TEXT,
-    servings INTEGER, ingredient_lines TEXT NOT NULL
+    servings INTEGER, ingredient_lines TEXT NOT NULL, n_ratings INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE recipe_ingredients (
     recipe_id TEXT NOT NULL REFERENCES recipes(id),
@@ -87,6 +91,7 @@ class ImportReport:
     dropped_no_match: int = 0
     dropped_no_quantities: int = 0
     with_servings: int = 0
+    with_ratings: int = 0
     unmapped: Counter[str] = field(default_factory=Counter)
 
     def to_dict(self, top: int = 50) -> dict:
@@ -98,6 +103,7 @@ class ImportReport:
             "dropped_no_match": self.dropped_no_match,
             "dropped_no_quantities": self.dropped_no_quantities,
             "with_servings": self.with_servings,
+            "with_ratings": self.with_ratings,
             "top_unmapped": self.unmapped.most_common(top),
         }
 
@@ -202,6 +208,31 @@ def load_quantities(path: Path, keys: set[tuple[str, float]]) -> dict[tuple[str,
     return matches
 
 
+def load_ratings(path: Path, recipe_ids: set[str]) -> dict[str, tuple[float, int]]:
+    """Średnia bayesowska i liczba ocen z RAW_interactions.csv. Ocena 0 to recenzja bez gwiazdek, pomijamy ją."""
+    sums: dict[str, list[float]] = defaultdict(lambda: [0.0, 0])
+    with path.open(encoding="utf-8", newline="") as file:
+        for row in csv.DictReader(file):
+            recipe_id = f"fc_{row['recipe_id']}"
+            try:
+                rating = float(row["rating"])
+            except ValueError:
+                continue
+            if recipe_id in recipe_ids and 1 <= rating <= 5:
+                sums[recipe_id][0] += rating
+                sums[recipe_id][1] += 1
+    if not sums:
+        return {}
+    mean = sum(total for total, _ in sums.values()) / sum(count for _, count in sums.values())
+    return {
+        recipe_id: (
+            round((total + RATING_PRIOR_WEIGHT * mean) / (count + RATING_PRIOR_WEIGHT), 3),
+            int(count),
+        )
+        for recipe_id, (total, count) in sums.items()
+    }
+
+
 def parse_list(value: str) -> list:
     parsed = ast.literal_eval(value) if value else []
     return parsed if isinstance(parsed, list) else []
@@ -221,7 +252,11 @@ def create_db(path: Path, ingredients: dict[str, Ingredient]) -> sqlite3.Connect
 
 
 def import_recipes(
-    csv_path: Path, quantities_path: Path, db_path: Path, limit: int | None = None,
+    csv_path: Path,
+    quantities_path: Path,
+    db_path: Path,
+    limit: int | None = None,
+    interactions_path: Path | None = None,
 ) -> ImportReport:
     ingredients = load_ingredients()
     alias_index = build_alias_index(ingredients)
@@ -284,7 +319,7 @@ def import_recipes(
 
         recipe_id = f"fc_{row['id']}"
         db.execute(
-            "INSERT OR IGNORE INTO recipes VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR IGNORE INTO recipes VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
             (
                 recipe_id,
                 row["name"].strip(),
@@ -312,6 +347,16 @@ def import_recipes(
         if limit and report.imported >= limit:
             break
 
+    # 3. Oceny z RAW_interactions (opcjonalnie): do rankingu w wyszukiwaniu.
+    if interactions_path:
+        recipe_ids = {row[0] for row in db.execute("SELECT id FROM recipes")}
+        ratings = load_ratings(interactions_path, recipe_ids)
+        db.executemany(
+            "UPDATE recipes SET rating = ?, n_ratings = ? WHERE id = ?",
+            [(rating, count, recipe_id) for recipe_id, (rating, count) in ratings.items()],
+        )
+        report.with_ratings = len(ratings)
+
     db.commit()
     db.close()
     return report
@@ -321,11 +366,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Importuje przepisy z Food.com (RAW_recipes + Karo8870) do SQLite.")
     parser.add_argument("csv", type=Path, help="ścieżka do RAW_recipes.csv, np. data/raw/RAW_recipes.csv")
     parser.add_argument("quantities", type=Path, help="ścieżka do parsed_recipes.csv (Karo8870), np. data/raw/parsed_recipes.csv")
+    parser.add_argument(
+        "--interactions", type=Path, default=None,
+        help="ścieżka do RAW_interactions.csv (oceny do rankingu), np. data/raw/RAW_interactions.csv",
+    )
     parser.add_argument("--db", type=Path, default=DEFAULT_DB)
     parser.add_argument("--limit", type=int, default=None, help="maksymalna liczba zaimportowanych przepisów")
     args = parser.parse_args()
 
-    report = import_recipes(args.csv, args.quantities, args.db, args.limit)
+    report = import_recipes(args.csv, args.quantities, args.db, args.limit, args.interactions)
     report_path = args.db.with_suffix(".report.json")
     report_path.write_text(json.dumps(report.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8")
 
@@ -334,7 +383,7 @@ def main() -> None:
         f"Odrzucone: {report.dropped_unmapped} (składnik spoza słownika), {report.dropped_invalid} (złe dane), "
         f"{report.dropped_no_match} (brak jednoznacznej pary w Karo8870), {report.dropped_no_quantities} (brak ilości)"
     )
-    print(f"Z liczbą porcji: {report.with_servings}")
+    print(f"Z liczbą porcji: {report.with_servings} | z ocenami: {report.with_ratings}")
     print("Najczęstsze składniki spoza słownika:")
     for raw, count in report.unmapped.most_common(15):
         print(f"  {count:>6}  {raw}")

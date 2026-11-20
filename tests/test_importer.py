@@ -22,6 +22,7 @@ from smart_fridge_chef.recipes.importer import (
 
 SAMPLE = Path(__file__).parent / "data" / "raw_recipes_sample.csv"
 KARO_SAMPLE = Path(__file__).parent / "data" / "karo_parsed_sample.csv"
+INTERACTIONS_SAMPLE = Path(__file__).parent / "data" / "raw_interactions_sample.csv"
 
 
 @pytest.fixture(scope="module")
@@ -124,3 +125,16 @@ def test_audit_finds_no_leaks_in_sample(tmp_path):
     db_path = tmp_path / "recipes.sqlite"
     import_recipes(SAMPLE, KARO_SAMPLE, db_path)
     assert audit(db_path) == {}
+
+
+def test_import_ratings(tmp_path):
+    db_path = tmp_path / "recipes.sqlite"
+    report = import_recipes(SAMPLE, KARO_SAMPLE, db_path, interactions_path=INTERACTIONS_SAMPLE)
+    assert report.with_ratings == 2
+
+    db = sqlite3.connect(db_path)
+    ratings = dict(db.execute("SELECT id, n_ratings FROM recipes").fetchall())
+    assert ratings == {"fc_1001": 2, "fc_1003": 1}  # ocena 0 i przepis spoza bazy pominięte
+    # średnia wszystkich ocen to 14/3; przy wadze 5 jedna piątka nie bije dwóch ocen 4,5
+    (rating_1001,), (rating_1003,) = db.execute("SELECT rating FROM recipes ORDER BY id").fetchall()
+    assert rating_1003 < 5 and rating_1001 < 5

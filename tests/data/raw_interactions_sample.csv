@@ -1,0 +1,6 @@
+user_id,recipe_id,date,rating,review
+1,1001,2006-01-01,5,great
+2,1001,2006-01-02,4,good
+3,1001,2006-01-03,0,no stars
+4,1003,2006-01-04,5,ok
+5,1002,2006-01-05,5,not imported

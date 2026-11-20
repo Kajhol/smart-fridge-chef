@@ -18,6 +18,7 @@ lodówka ──ingredient_id──► SŁOWNIK ◄──ingredient_id── skł
 | `recipes` | `id`, `title`, `steps`, `time_min`, `servings`, `kcal_per_serving` (ze źródła przepisu), `difficulty` (`easy`/`medium`/`hard`), `rating`, `source`, `url` |
 | `recipe_ingredients` | `recipe_id`, `ingredient_id`, `quantity`, `unit`, `raw_text` (oryginał ze strony, do sprawdzania mapowania) |
 | `pantry_staples` | `ingredient_id` (sól, olej, pieprz – zakładamy, że user zawsze je ma) |
+| `recipes.rating`, `recipes.n_ratings` | ocena bayesowska i liczba ocen z `RAW_interactions.csv` (D-012) |
 | `recipe_allergens` | `recipe_id`, `allergen` (liczone przy imporcie, też z pomijanych przypraw, np. `celery salt`; D-010) |
 
 Lodówka w PoC nie jest tabelą: to lista po ekranie korekty, przekazywana w zapytaniu.

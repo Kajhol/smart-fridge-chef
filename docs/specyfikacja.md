@@ -265,6 +265,25 @@ smart-fridge-chef/
 
 **Skutek dla `/recipes`.** `RecipeRequest.items` może zawierać `ingredient_id` w stylu `custom_…`. Backend nie powinien zwracać wtedy błędu, tylko traktować taką pozycję jak produkt, którego nie ma w żadnym przepisie.
 
+### D-012: Wyszukiwanie kandydatów i `POST /recipes` bez LLM
+
+- **Data:** 20.11.2026
+- **Autor:** Igor
+- **Status: przyjęta** (Igor; do wiadomości zespołu)
+- **Doprecyzowuje:** D-004 (filtr i ranking), D-009 (endpoint), D-011 (pozycje `custom_…`)
+
+**Decyzja.** `find_candidates` (`src/smart_fridge_chef/recipes/search.py`) to jedno zapytanie SQL, bez LLM. Endpoint `POST /recipes` (`recipes/router.py`, podpięty w `api.py` jedną linią) zwraca 3 najlepsze przepisy w formacie `RecipeResponse`. W M3 LLM wybiera spośród tych samych kandydatów i tłumaczy; do tego czasu tytuł, kroki i linie składników są po angielsku, a opis jest z szablonu („Masz 3 z 4 głównych składników. Brakuje: cebula.”).
+
+- **Lodówka** to `ingredient_id` z listy. Pozycje z `null` i dodane z aplikacji (`custom_…`) nie pasują do żadnego przepisu, ale nie powodują błędu.
+- **Filtr:** najwyżej 2 braki (`MAX_MISSING`), przyprawy z `pantry_staples` się nie liczą. Przepis musi mieć co najmniej 3 główne składniki i co najmniej 2 z lodówki, żeby nie wygrywały „jajko na twardo” ani „microwave cleaner”. Odpadają przepisy z alergenem z profilu (`recipe_allergens`), z wykluczonym składnikiem, trudniejsze niż `max_difficulty` i dłuższe niż `max_time_min` (przepis bez czasu przechodzi).
+- **Ranking:** liczba produktów z lodówki minus 1,5 za każdy brak. Przepis na 5 produktów z lodówki i 1 brak wygrywa z 3 produktami bez braków. Przy remisie decyduje mniej braków, potem ocena.
+- **Ocena:** z `RAW_interactions.csv` (opcja `--interactions` importu), średnia bayesowska z wagą 5, żeby jedna piątka nie biła setki ocen 4,8. Ocena 0 (recenzja bez gwiazdek) jest pomijana.
+- **Brak bazy:** `503` z instrukcją importu. Ścieżkę zmienia zmienna `RECIPES_DB`.
+
+**Pomiar** (20.11.2026, kopia HF, 5 823 przepisy, lodówka ze `scan_001`): 215 kandydatów bez ograniczeń, 38 przy alergii na jajka, 24 przy mleku, glutenie i 30 min. Zapytanie trwa ok. 20 ms.
+
+**Ograniczenie.** Ilość w lodówce się nie liczy, tylko obecność (D-004): jedno jajko wystarczy do przepisu na sześć.
+
 ## Otwarte pytania
 
 | Nr | Pytanie | Propozycja | Kto / do kiedy |
