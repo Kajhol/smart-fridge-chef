@@ -303,6 +303,23 @@ smart-fridge-chef/
 
 **Później:** przepis od AI z produktów `custom_…`; zamienniki alergenów z kuratorowanej tabeli (opcja 2 z rozmowy o zamiennikach); cache tłumaczeń po ID przepisu.
 
+### D-014: Ewaluacja części przepisowej
+
+- **Data:** 20.11.2026
+- **Autor:** Igor
+- **Status: przyjęta** (Igor; do wiadomości zespołu)
+- **Zamyka:** O-012
+- **Doprecyzowuje:** D-013
+
+**Decyzja.** `uv run eval-recipes` (`recipes/benchmark.py`) puszcza tę samą logikę co `POST /recipes` (`router.recommend`) dla każdej pary skan × profil. Skan to `ground_truth.json` (lodówka po korekcie, D-003). Pełne wyniki idą do `data/eval/` (poza gitem, bo są tam teksty z Food.com), a do `docs/wyniki.md` przepisujemy tylko liczby.
+
+- **Profile (O-012):** `bez_ograniczen`; `jajka_mleko`; `gluten_orzechy` (gluten, orzechy, orzeszki ziemne); `wege` (ryby i skorupiaki jako alergen, mięso, buliony i sos Worcestershire wykluczone); `szybko_seler_gorczyca` (seler, gorczyca, sezam, soja, łatwe, do 30 min).
+- **Bramka:** 0 naruszeń. Naruszenie to przepis z alergenem z profilu (`recipe_allergens` dla bazy, alergeny składników dla przepisu od AI), z wykluczonym składnikiem, przepis od AI albo zamiennik z zakazanym słowem. Skrypt kończy się błędem, gdy jest choć jedno.
+- **Sygnał do przejrzenia:** oryginalne linie z Food.com ze słowem sugerującym alergen z profilu (słowa z `audit-allergens`). Nie zależy od mapowania na słownik, ale ma fałszywe alarmy, więc czyta je człowiek.
+- **Czas i koszt:** czas całego zapytania (mediana, p90), liczba wywołań LLM, tokeny wejścia i wyjścia (z tokenami „myślenia”), błędy LLM. Koszt w USD z cen podanych przez `--price IN OUT` (za 1 mln tokenów) z aktualnego cennika dostawcy, żeby nie trzymać cen w kodzie.
+- **Tłumaczenie:** udział wpisów, które zostały po angielsku (kontrola liczb odrzuciła tłumaczenie). Z `--baseline groq/openai/gpt-oss-120b` te same przepisy tłumaczy drugi model, a skrypt zapisuje arkusz do ślepej oceny 1–5 przez zespół (wersje A/B w losowej kolejności, klucz na końcu).
+- **Powtarzalność:** `--repeats N` puszcza każde zapytanie N razy (temperatura 0, ale wybór może się różnić).
+
 ## Otwarte pytania
 
 | Nr | Pytanie | Propozycja | Kto / do kiedy |
@@ -314,7 +331,6 @@ smart-fridge-chef/
 | O-007 | Jedno wywołanie LLM ze wszystkimi zdjęciami czy osobne na każdą strefę (równolegle)? | Zmierzyć oba warianty w PoC. Ważne przez duplikaty (D-003): przy osobnych wywołaniach model nie widzi pozostałych zdjęć i nie może sam usunąć powtórzeń. | Kajtek |
 | O-010 | Przyprawy podstawowe (sól, olej, pieprz) w rankingu przepisów | Zakładać, że zawsze są, i nie liczyć ich do braków (D-004) | Osoba 2 (backend) |
 | O-011 | Kalorie: z Food.com czy liczone przez backend ze słownika? | Źródłem prawdy jest backend; Food.com służy do sprawdzenia normalizacji | Osoba 2 (backend) |
-| O-012 | Testowe profile użytkowników z alergiami do sprawdzenia progu „0 przepisów z alergenem” | 3–5 profili z typowymi alergenami | Osoba 2 (backend) |
 
 ## Zamknięte pytania
 
@@ -324,3 +340,4 @@ smart-fridge-chef/
 | O-008 | Kanoniczna jednostka każdego składnika (szt., g, ml) | Pole `unit` w słowniku (`src/smart_fridge_chef/data/ingredients.json`), sprawdzane przez `Ingredient` w `dictionary.py` |
 | O-003 | Źródło przepisów: RecipeNLG czy Food.com? | Food.com: RAW_recipes (Kaggle) + ilości z Karo8870 (HF), D-010 |
 | O-009 | Jak w ewaluacji liczymy pozycje „inny” i produkty widoczne częściowo? | D-003: pole `visibility` w ręcznej liście, pozycje spoza słownika poza F1 |
+| O-012 | Testowe profile użytkowników z alergiami do sprawdzenia progu „0 przepisów z alergenem” | 5 profili w `recipes/benchmark.py` (`PROFILES`), D-014 |

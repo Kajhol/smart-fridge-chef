@@ -108,3 +108,25 @@ Wniosek bez zmian: `3.6-flash` jest wyraźnie lepszy w znajdowaniu (zwłaszcza w
 
 - To jeden skan, więc liczby pokazują kierunek, a nie wynik. Wnioski wyciągamy dopiero z całego zbioru (D-003).
 - Przy spisywaniu przyjęliśmy regułę: produkt spoza słownika, który w przepisie da się zamienić na inny, wpisujemy pod ID tego najbliższego (mandarynki jako `orange`). Inne produkty spoza słownika mają `ingredient_id = null` (np. mleczko zagęszczone, dżem, katering).
+
+# Wyniki części przepisowej
+
+Pomiary `POST /recipes` (D-013) według D-014: `uv run eval-recipes`. Tak jak wyżej, wpisów nie nadpisujemy.
+
+## Szablon wpisu (do wypełnienia po pierwszym przebiegu)
+
+**Status: do uruchomienia** na pełnej bazie z Kaggle, z kluczem API.
+
+```bash
+uv run eval-recipes --model gemini-3.1-flash-lite --baseline groq/openai/gpt-oss-120b --price IN OUT
+```
+
+**Ustawienia:** data, model, baseline, baza (liczba przepisów), skany, ceny za 1 mln tokenów i ich źródło.
+
+**Bezpieczeństwo:** tabela z wyjścia skryptu (skan, profil, kandydaci, przepisy, naruszenia, podejrzane). Bramka: 0 naruszeń. Podejrzane linie przejrzane ręcznie: ile to fałszywe alarmy.
+
+**Czas i koszt:** mediana i p90 czasu, wywołania LLM, tokeny i USD na zapytanie, zapytania z błędem LLM.
+
+**Tłumaczenie:** udział wpisów po angielsku (model i baseline), średnia ocena 1–5 zespołu z arkusza `translations_*.md`.
+
+**Co wynika:** 2–3 zdania.

@@ -19,3 +19,6 @@ data/*.sqlite
 
 # Produkty dodane z aplikacji (POST /ingredients), dane konkretnego serwera
 data/custom_ingredients.json
+
+# Wyniki ewaluacji przepisów: zawierają teksty z Food.com (D-010), do wyniki.md tylko liczby
+data/eval/
