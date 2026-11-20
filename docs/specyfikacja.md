@@ -101,6 +101,7 @@ Na później (poza PoC): użytkownik nagrywa film, a aplikacja sama wybiera z ni
 - Wody (np. w dzbanku filtrującym) nie spisujemy. Prompt każe modelowi ją ignorować, a ewaluacja pomija `water` po obu stronach (`IGNORED_IDS`), bo do przepisów nie ma znaczenia.
 - Gotowe dania (katering, resztki obiadu w pudełku) to jedna pozycja `null` na danie, ze składnikami w `label`. Nie rozbijamy ich na składniki, bo to nie są produkty do gotowania.
 - Format pliku: `data/scans/scan_NNN/ground_truth.json`, sprawdzany przez `GroundTruth` w `src/smart_fridge_chef/evaluation.py`.
+- **Skany z aplikacji** (dopisane 20.11.2026). Po korekcie listy przycisk „Przygotuj zapis do ewaluacji” pozwala oznaczyć `visibility` każdej pozycji, a „Zapisz skan” wysyła wszystko do `POST /scans`. Backend zapisuje w kolejnym `scan_NNN` zdjęcia, `ground_truth.json` z listy po korekcie, odpowiedź modelu bez poprawek (`pred_…_app_….json`) i metryki (`metrics_…_app_….json`). Produkty dodane z aplikacji (`custom_…`, D-011) trafiają do ręcznej listy jako `null`. **Uwaga:** lista powstaje z poprawiania odpowiedzi modelu, więc łatwo przepuścić jego błędy (zostawić halucynację, nie dopisać schowanego produktu). Listę sprawdzamy przy otwartej lodówce, a ilości przepisujemy z opakowań, tak jak przy spisywaniu ręcznym.
 
 **Metryki (na skan, potem średnia po zbiorze).**
 

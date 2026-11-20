@@ -1,3 +1,4 @@
+import json
 from io import BytesIO
 
 import pytest
@@ -133,3 +134,66 @@ def test_scan_reports_bad_model_response_as_502(monkeypatch):
     monkeypatch.setattr(api, "scan", broken)
     response = client.post("/scan", files=upload("a.jpg"), data={"zones": ["door"]})
     assert response.status_code == 502
+
+
+@pytest.fixture
+def scans_dir(tmp_path, monkeypatch):
+    path = tmp_path / "scans"
+    monkeypatch.setattr(api, "SCANS_DIR", path)
+    return path
+
+
+def save_scan_form(truth_items: str | None = None) -> dict:
+    prediction = ScanResult(
+        items=[
+            DetectedItem(ingredient_id="egg", label="jajka", quantity=6, unit="pcs", confidence="high"),
+            DetectedItem(ingredient_id="onion", label="cebula", quantity=1, unit="pcs", confidence="low"),
+        ]
+    )
+    truth = [
+        {"ingredient_id": "egg", "label": "jajka", "quantity": 10, "unit": "pcs", "visibility": "visible"},
+        {"ingredient_id": "milk", "label": "mleko", "quantity": 1000, "unit": "ml", "visibility": "hidden"},
+        {"ingredient_id": "custom_mandarynka", "label": "mandarynki", "quantity": 5, "unit": "pcs", "visibility": "visible"},
+    ]
+    return {
+        "zones": ["door", "shelves_upper"],
+        "prediction": prediction.model_dump_json(),
+        "truth_items": truth_items if truth_items is not None else json.dumps(truth),
+        "seconds": "4.2",
+    }
+
+
+def test_save_scan_writes_ground_truth_photos_and_metrics(scans_dir):
+    response = client.post("/scans", files=upload("a.jpg", "b.jpg"), data=save_scan_form())
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["scan_id"] == "scan_001"
+    assert body["metrics"]["found"] == 1  # egg
+    assert body["metrics"]["missed"] == ["milk"]
+    assert body["metrics"]["hallucinations"] == ["onion"]
+
+    folder = scans_dir / "scan_001"
+    truth = api.GroundTruth.model_validate_json((folder / "ground_truth.json").read_text(encoding="utf-8"))
+    assert truth.photos == {"door.jpg": "door", "shelves_upper.jpg": "shelves_upper"}
+    assert (folder / "door.jpg").exists()
+    assert truth.items[2].ingredient_id is None  # custom_mandarynka jest spoza słownika (D-003)
+    assert len(list(folder.glob("pred_*_app_*.json"))) == 1
+    metrics_file = next(folder.glob("metrics_*_app_*.json"))
+    assert json.loads(metrics_file.read_text(encoding="utf-8"))["seconds"] == 4.2
+
+
+def test_save_scan_takes_next_free_number(scans_dir):
+    (scans_dir / "scan_001").mkdir(parents=True)
+    (scans_dir / "scan_007").mkdir()
+
+    response = client.post("/scans", files=upload("a.jpg", "b.jpg"), data=save_scan_form())
+
+    assert response.json()["scan_id"] == "scan_008"
+
+
+def test_save_scan_rejects_invalid_truth_items(scans_dir):
+    response = client.post("/scans", files=upload("a.jpg", "b.jpg"), data=save_scan_form(truth_items='[{"label": "x"}]'))
+
+    assert response.status_code == 422
+    assert not scans_dir.exists()
