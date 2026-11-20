@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
 from smart_fridge_chef.dictionary import load_ingredients
 from smart_fridge_chef.evaluation import GroundTruth, ScanMetrics, TruthItem, evaluate
+from smart_fridge_chef.recipes.router import router as recipes_router
 from smart_fridge_chef.vision.client import DEFAULT_MODEL, scan
 from smart_fridge_chef.vision.images import DEFAULT_MAX_SIDE
 from smart_fridge_chef.vision.schema import Photo, ScanResult, Unit, Zone
@@ -38,6 +39,7 @@ SCANS_DIR = Path(os.getenv("SCANS_DIR", Path(__file__).parents[2] / "data" / "sc
 scans_lock = Lock()
 
 app = FastAPI(title="Smart Fridge Chef")
+app.include_router(recipes_router)
 
 
 class IngredientOption(BaseModel):

@@ -44,10 +44,12 @@ Danych nie ma w repo (licencja, D-010). Potrzebne są dwa pliki w `data/raw/`:
 
 ```
 curl -L -o data/raw/parsed_recipes.csv https://huggingface.co/datasets/Karo8870/food.com-parsed-dataset/resolve/main/parsed_recipes.csv
-uv run import-recipes data/raw/RAW_recipes.csv data/raw/parsed_recipes.csv
+uv run import-recipes data/raw/RAW_recipes.csv data/raw/parsed_recipes.csv --interactions data/raw/RAW_interactions.csv
 ```
 
-Powstaje `data/recipes.sqlite` (tylko przepisy, których wszystkie składniki są w słowniku i które mają ilości) i raport `data/recipes.report.json` z najczęstszymi składnikami spoza słownika. Źródło: Majumder i in., *Generating Personalized Recipes from Historical User Preferences*, EMNLP 2019.
+`RAW_interactions.csv` jest w tym samym zipie z Kaggle (oceny do rankingu, opcjonalnie). Powstaje `data/recipes.sqlite` (tylko przepisy, których wszystkie składniki są w słowniku i które mają ilości) i raport `data/recipes.report.json` z najczęstszymi składnikami spoza słownika. Źródło: Majumder i in., *Generating Personalized Recipes from Historical User Preferences*, EMNLP 2019.
+
+Endpoint `POST /recipes` czyta tę bazę (ścieżkę zmienia `RECIPES_DB` w `.env`). Bez bazy zwraca 503.
 
 ## Dodawanie paczek
 
