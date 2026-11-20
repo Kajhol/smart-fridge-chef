@@ -366,3 +366,53 @@ def main() -> None:
         print(f"Arkusz do oceny tłumaczeń: {sheet}")
     if summary["violations"]:
         raise SystemExit(f"BRAMKA NIE PRZESZŁA: {summary['violations']} naruszeń alergenów/wykluczeń")
+
+
+# --- Wynik do udostępnienia --------------------------------------------------
+
+
+def shareable(result: dict) -> dict:
+    """Same liczby z wyniku `eval-recipes`: bez tytułów, kroków i linii z Food.com (D-010)."""
+    rows = [
+        {key: row[key] for key in ("scan", "profile", "attempt", "seconds", "candidates", "calls",
+                                    "input_tokens", "output_tokens")}
+        | {
+            "errors": len(row["errors"]),
+            "recipes": [
+                {"id": r["id"], "source": r["source"], "violations": len(r["violations"]),
+                 "suspects": len(r["suspects"]), "untranslated": r.get("untranslated"), "entries": r.get("entries")}
+                for r in row["recipes"]
+            ],
+        }
+        for row in result["rows"]
+    ]
+    return {"model": result["model"], "baseline": result["baseline"], "summary": result["summary"], "rows": rows}
+
+
+def secrets(env_file: Path) -> list[str]:
+    """Wartości kluczy z .env i ze zmiennych środowiska (tylko do sprawdzenia, nigdzie nie zapisywane)."""
+    from dotenv import dotenv_values
+
+    values = [v for k, v in dotenv_values(env_file).items() if k.endswith("_KEY") and v]
+    values += [os.environ[name] for name in SECRET_ENV if os.getenv(name)]
+    return [v for v in values if len(v) > 8]
+
+
+def share_main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Wynik eval-recipes do wysłania: same liczby, bez tekstów z Food.com, sprawdzony pod kątem kluczy."
+    )
+    parser.add_argument("result", nargs="?", type=Path, help="recipes_*.json; domyślnie najnowszy w data/eval/")
+    parser.add_argument("--out", type=Path, help="plik wynikowy; domyślnie data/eval/share_<nazwa wyniku>")
+    args = parser.parse_args()
+
+    source = args.result or max(OUT_DIR.glob("recipes_*.json"), key=lambda p: p.stat().st_mtime, default=None)
+    if source is None:
+        raise SystemExit(f"Brak wyników w {OUT_DIR}. Najpierw `uv run eval-recipes`.")
+    text = json.dumps({"file": source.name, **shareable(json.loads(source.read_text(encoding="utf-8")))},
+                      ensure_ascii=False, indent=1)
+    if any(value in text for value in secrets(ROOT / ".env")):
+        raise SystemExit("STOP: w wyniku jest klucz API, nic nie zapisano.")
+    out = args.out or OUT_DIR / f"share_{source.name}"
+    out.write_text(text, encoding="utf-8")
+    print(f"OK, bez kluczy i tekstów przepisów: {out}")

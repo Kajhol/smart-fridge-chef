@@ -111,3 +111,33 @@ def test_api_keys_are_redacted_from_errors(monkeypatch):
     except RuntimeError:
         pass
     assert "gsk_secret" not in calls.errors[0] and "<GROQ_API_KEY>" in calls.errors[0]
+
+
+def test_shareable_has_numbers_but_no_recipe_text(db_path, tmp_path, monkeypatch):  # noqa: F811
+    main = fake(RecipeSelection={"picks": []}, TranslatedRecipe=translation)
+    with sqlite3.connect(db_path) as db:
+        result = run(db, [("scan_test", ITEMS)], {"bez_ograniczen": PROFILES["bez_ograniczen"]}, main)
+    result |= {"model": "gemini-test", "baseline": None, "summary": summarize(result)}
+    source = tmp_path / "recipes_test.json"
+    source.write_text(json.dumps(result), encoding="utf-8")
+
+    monkeypatch.setattr(benchmark, "ROOT", tmp_path)
+    monkeypatch.setattr("sys.argv", ["eval-recipes-share", str(source), "--out", str(tmp_path / "share.json")])
+    benchmark.share_main()
+    shared = json.loads((tmp_path / "share.json").read_text(encoding="utf-8"))
+    assert shared["summary"]["requests"] == 1 and shared["rows"][0]["recipes"][0]["id"] in RECIPES
+    assert "PL " not in json.dumps(shared) and "title" not in json.dumps(shared["rows"])
+
+
+def test_share_refuses_when_a_key_leaks(tmp_path, monkeypatch):
+    import pytest
+
+    (tmp_path / ".env").write_text("GEMINI_API_KEY=AIza_secret_value_123\n", encoding="utf-8")
+    source = tmp_path / "recipes_x.json"
+    source.write_text(json.dumps({"model": "m", "baseline": None, "summary": {"note": "AIza_secret_value_123"},
+                                  "rows": []}), encoding="utf-8")
+    monkeypatch.setattr(benchmark, "ROOT", tmp_path)
+    monkeypatch.setattr("sys.argv", ["eval-recipes-share", str(source), "--out", str(tmp_path / "share.json")])
+    with pytest.raises(SystemExit, match="STOP"):
+        benchmark.share_main()
+    assert not (tmp_path / "share.json").exists()
