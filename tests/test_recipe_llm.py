@@ -91,3 +91,19 @@ def test_usage_is_recorded_for_both_providers():
         {"model": "gemini-3.1-flash-lite", "input_tokens": 100, "output_tokens": 25},
         {"model": "groq/x", "input_tokens": 80, "output_tokens": 10},
     ]
+
+
+def test_ollama_uses_openai_compatible_api(monkeypatch):
+    completions = FakeGroqCompletions(json.dumps(SELECTION))
+    client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    result = llm.generate("prompt", "system", RecipeSelection, "ollama/qwen2.5:3b", client)
+
+    assert result.picks[0].recipe_id == "fc_1001"
+    assert completions.calls[0]["model"] == "qwen2.5:3b"
+
+
+def test_ollama_needs_no_api_key(monkeypatch):
+    from smart_fridge_chef.recipes import router
+
+    monkeypatch.setenv("RECIPE_MODEL", "ollama/qwen2.5:3b")
+    assert router.get_llm() is not None

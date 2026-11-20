@@ -11,6 +11,8 @@ from pydantic import BaseModel
 DEFAULT_MODEL = "gemini-3.1-flash-lite"
 GROQ_PREFIX = "groq/"
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+OLLAMA_PREFIX = "ollama/"
+OLLAMA_BASE_URL = "http://localhost:11434/v1"  # lokalny model, np. ollama/qwen2.5:3b; adres zmienia OLLAMA_BASE_URL
 
 Schema = TypeVar("Schema", bound=BaseModel)
 
@@ -47,13 +49,13 @@ def call_gemini(
     return schema.model_validate_json(response.text)
 
 
-def call_groq(
-    prompt: str, system_prompt: str, schema: type[Schema], model: str, client: Any = None,
+def call_openai_compatible(
+    prompt: str, system_prompt: str, schema: type[Schema], model: str, client: Any,
     usage: list[dict] | None = None,
 ) -> Schema:
-    client = client or OpenAI(base_url=GROQ_BASE_URL, api_key=os.getenv("GROQ_API_KEY"))
+    """Groq i Ollama mają API zgodne z OpenAI: ten sam kod, inny adres i prefiks modelu."""
     response = client.chat.completions.create(
-        model=model.removeprefix(GROQ_PREFIX),
+        model=model.split("/", 1)[1],
         temperature=0,
         messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}],
         response_format={
@@ -66,6 +68,23 @@ def call_groq(
     return schema.model_validate_json(response.choices[0].message.content)
 
 
+def call_groq(
+    prompt: str, system_prompt: str, schema: type[Schema], model: str, client: Any = None,
+    usage: list[dict] | None = None,
+) -> Schema:
+    client = client or OpenAI(base_url=GROQ_BASE_URL, api_key=os.getenv("GROQ_API_KEY"))
+    return call_openai_compatible(prompt, system_prompt, schema, model, client, usage)
+
+
+def call_ollama(
+    prompt: str, system_prompt: str, schema: type[Schema], model: str, client: Any = None,
+    usage: list[dict] | None = None,
+) -> Schema:
+    # Ollama nie sprawdza klucza, ale klient OpenAI wymaga niepustego
+    client = client or OpenAI(base_url=os.getenv("OLLAMA_BASE_URL") or OLLAMA_BASE_URL, api_key="ollama")
+    return call_openai_compatible(prompt, system_prompt, schema, model, client, usage)
+
+
 def generate(
     prompt: str,
     system_prompt: str,
@@ -74,10 +93,13 @@ def generate(
     client: Any = None,
     usage: list[dict] | None = None,
 ) -> Schema:
-    """Jedno wywołanie LLM. `gemini-*` idzie do Gemini, `groq/<model>` do Groq (np. groq/openai/gpt-oss-120b)."""
+    """Jedno wywołanie LLM. `gemini-*` idzie do Gemini, `groq/<model>` do Groq (np. groq/openai/gpt-oss-120b),
+    `ollama/<model>` do lokalnej Ollamy (np. ollama/qwen2.5:3b)."""
     model = model or recipe_model()
     if model.startswith("gemini-"):
         return call_gemini(prompt, system_prompt, schema, model, client, usage)
     if model.startswith(GROQ_PREFIX):
         return call_groq(prompt, system_prompt, schema, model, client, usage)
+    if model.startswith(OLLAMA_PREFIX):
+        return call_ollama(prompt, system_prompt, schema, model, client, usage)
     raise ValueError(f"Unknown provider for model: {model}")

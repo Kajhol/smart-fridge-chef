@@ -35,7 +35,8 @@ def get_llm() -> LLM | None:
     """LLM do wyboru i tłumaczenia albo None, gdy nie ma klucza. Testy podmieniają przez dependency_overrides."""
     model = llm.recipe_model()
     keys = next((names for prefix, names in API_KEYS.items() if model.startswith(prefix)), ())
-    if not any(os.getenv(name) for name in keys):
+    # lokalna Ollama nie potrzebuje klucza
+    if not model.startswith(llm.OLLAMA_PREFIX) and not any(os.getenv(name) for name in keys):
         return None
     return lambda prompt, system_prompt, schema: llm.generate(prompt, system_prompt, schema, model)
 
