@@ -33,6 +33,7 @@ uv run fastapi dev src/smart_fridge_chef/api.py
 | `GET /ingredients` | Słownik składników i produkty dodane z aplikacji (pole `custom`) |
 | `POST /ingredients` | Dodaje produkt do słownika z aplikacji (D-011), zapis w `data/custom_ingredients.json` (poza gitem) |
 | `POST /scans` | Zapisuje skan do ewaluacji (D-003) w kolejnym `data/scans/scan_NNN/` i zwraca metryki |
+| `POST /recipes` | Lista z lodówki i profil (`RecipeRequest`) → najwyżej 3 przepisy (`RecipeResponse`, D-012). Wymaga bazy przepisów (niżej), bez niej zwraca 503 |
 
 ## Aplikacja mobilna (Expo)
 
