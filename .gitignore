@@ -16,3 +16,6 @@ data/scans/**/*.heic
 # Przepisy z Food.com: dane bez otwartej licencji, nie commitujemy (D-010)
 data/raw/
 data/*.sqlite
+
+# Produkty dodane z aplikacji (POST /ingredients), dane konkretnego serwera
+data/custom_ingredients.json

@@ -245,6 +245,23 @@ smart-fridge-chef/
 
 **Pokrycie** (pomiar 17.11.2026 na kopii HF `KingName1/food.com`, 87 862 przepisy, bez ID): 7 274 przepisy mają wszystkie składniki w słowniku, z tego 6 624 (91%) łączy się jednoznacznie z Karo8870, a **5 823** ma też ilości. 3 287 z nich ma liczbę porcji. Losowa próba 20 połączonych przepisów: wszystkie to te same dania (te same składniki w tej samej kolejności). Na pełnym RAW_recipes z Kaggle powinno wyjść ok. 2,5 razy więcej.
 
+### D-011: Użytkownik dodaje produkty do słownika z aplikacji
+
+- **Data:** 20.11.2026
+- **Autor:** Kajtek
+- **Status: do potwierdzenia z Igorem** (dotyczy `/recipes`)
+- **Doprecyzowuje:** D-006 (ekran korekty), D-009 (`ingredient_id` w `RecipeRequest`)
+
+**Decyzja.** Na ekranie korekty użytkownik może zmienić nazwę pozycji (np. model rozpoznał „owoce w folii”, a to mandarynki) i wybrać produkt ze słownika. Jeśli produktu w słowniku nie ma, dodaje go z aplikacji: nazwa po polsku i jednostka (`pcs`, `g`, `ml`).
+
+- **`GET /ingredients`** zwraca słownik (`id`, `name_pl`, `unit`) i produkty dodane z aplikacji, z polem `custom`.
+- **`POST /ingredients`** (`name_pl`, `unit`) zapisuje produkt w `data/custom_ingredients.json` na backendzie, z `id` w postaci `custom_<nazwa>` (np. `custom_mandarynka`). Plik nie jest w gicie. `ingredients.json` się nie zmienia, bo to słownik zespołu z aliasami do przepisów.
+- **Bez duplikatów:** nazwy porównujemy bez wielkich liter, ogonków i znaków. Drugie „Mandarynka!” zwraca istniejącą pozycję, a „jablko” zwraca słownikowe `apple`, zamiast tworzyć nową.
+
+**Ograniczenie.** Dodany produkt **nie dopasuje się do żadnego przepisu**. Baza z D-010 zawiera tylko przepisy, których wszystkie składniki są w słowniku, a nowy produkt nie ma angielskich aliasów. Żeby zaczął działać w przepisach, trzeba przenieść go do `ingredients.json` z aliasami (np. `tangerine`, `mandarin orange`) i zaimportować przepisy ponownie. `data/custom_ingredients.json` służy więc też jako lista produktów do dopisania.
+
+**Skutek dla `/recipes`.** `RecipeRequest.items` może zawierać `ingredient_id` w stylu `custom_…`. Backend nie powinien zwracać wtedy błędu, tylko traktować taką pozycję jak produkt, którego nie ma w żadnym przepisie.
+
 ## Otwarte pytania
 
 | Nr | Pytanie | Propozycja | Kto / do kiedy |
