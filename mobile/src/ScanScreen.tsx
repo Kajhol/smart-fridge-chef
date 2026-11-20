@@ -1,8 +1,18 @@
 import * as ImagePicker from 'expo-image-picker';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { getIngredients, scanFridge, type IngredientOption, type Zone, type ZonePhoto } from './api';
+import {
+  getIngredients,
+  saveScan,
+  scanFridge,
+  type IngredientOption,
+  type SavedScan,
+  type ScanResult,
+  type Zone,
+  type ZonePhoto,
+} from './api';
+import EvaluationResult from './EvaluationResult';
 import ItemsEditor, { toFridgeItems, type FridgeItem } from './ItemsEditor';
 import PhotoPreview from './PhotoPreview';
 import { colors, font, radius, spacing } from './theme';
@@ -35,13 +45,26 @@ export default function ScanScreen() {
   const [items, setItems] = useState<FridgeItem[] | null>(null);
   const [ingredients, setIngredients] = useState<IngredientOption[]>([]);
   const [preview, setPreview] = useState<Zone | null>(null);
+  // Odpowiedź modelu bez poprawek i czas analizy: potrzebne do metryk przy zapisie do ewaluacji.
+  const [prediction, setPrediction] = useState<ScanResult | null>(null);
+  const [scanSeconds, setScanSeconds] = useState<number | null>(null);
+  const [evaluating, setEvaluating] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState<SavedScan | null>(null);
+
+  const namesById = useMemo(
+    () => new Map(ingredients.map((ingredient) => [ingredient.id, ingredient.name_pl])),
+    [ingredients],
+  );
 
   // Słownik pobieramy raz, przy pierwszym pokazaniu ekranu. Bez niego działa skan,
   // tylko nie da się dodać produktu ani przypisać pozycji spoza słownika.
   useEffect(() => {
     getIngredients()
       .then((list) => setIngredients(sortByName(list)))
-      .catch((caught) => setError(`Nie udało się pobrać słownika: ${caught instanceof Error ? caught.message : caught}`));
+      .catch((caught) =>
+        setError(`Nie udało się pobrać słownika: ${caught instanceof Error ? caught.message : caught}`),
+      );
   }, []);
 
   const step = photos.length;
@@ -91,11 +114,37 @@ export default function ScanScreen() {
     );
   }
 
+  async function save() {
+    if (!items || !prediction) {
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const truthItems = items.map(({ ingredient_id, label, quantity, unit, visibility }) => ({
+        ingredient_id,
+        label,
+        quantity,
+        unit,
+        visibility: visibility ?? 'visible',
+      }));
+      setSaved(await saveScan(photos, prediction, truthItems, scanSeconds));
+      setEvaluating(false);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function analyze() {
     setLoading(true);
     setError(null);
+    const started = Date.now();
     try {
       const result = await scanFridge(photos);
+      setScanSeconds(Math.round((Date.now() - started) / 100) / 10);
+      setPrediction(result);
       setItems(toFridgeItems(result.items));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -107,6 +156,10 @@ export default function ScanScreen() {
   function reset() {
     setPhotos([]);
     setItems(null);
+    setPrediction(null);
+    setScanSeconds(null);
+    setEvaluating(false);
+    setSaved(null);
     setError(null);
   }
 
@@ -131,7 +184,12 @@ export default function ScanScreen() {
               </View>
               <View style={styles.row}>
                 <AppButton title="Zrób zdjęcie" onPress={() => addPhoto('camera')} style={styles.grow} />
-                <AppButton title="Z galerii" variant="secondary" onPress={() => addPhoto('library')} style={styles.grow} />
+                <AppButton
+                  title="Z galerii"
+                  variant="secondary"
+                  onPress={() => addPhoto('library')}
+                  style={styles.grow}
+                />
               </View>
             </>
           )}
@@ -162,7 +220,9 @@ export default function ScanScreen() {
             />
           )}
 
-          {allTaken && <AppButton title={loading ? 'Analizuję…' : 'Analizuj zdjęcia'} onPress={analyze} loading={loading} />}
+          {allTaken && (
+            <AppButton title={loading ? 'Analizuję…' : 'Analizuj zdjęcia'} onPress={analyze} loading={loading} />
+          )}
         </Card>
       )}
 
@@ -192,7 +252,43 @@ export default function ScanScreen() {
             ingredients={ingredients}
             onChange={setItems}
             onIngredientCreated={onIngredientCreated}
+            showVisibility={evaluating}
           />
+
+          {saved ? (
+            <EvaluationResult saved={saved} namesById={namesById} />
+          ) : (
+            <Card>
+              <Text style={styles.heading}>Ewaluacja rozpoznawania</Text>
+              {evaluating ? (
+                <>
+                  <Text style={styles.hint}>
+                    Lista po korekcie stanie się wzorcem, z którym porównamy model. Sprawdź ją przy otwartej lodówce:
+                  </Text>
+                  <Text style={styles.hint}>• przy każdym produkcie zaznacz, czy widać go na zdjęciach</Text>
+                  <Text style={styles.hint}>
+                    • dopisz produkty schowane (np. w szufladzie) i oznacz je jako „schowane”
+                  </Text>
+                  <Text style={styles.hint}>• ilości przepisz z opakowań, nie zgaduj ze zdjęć</Text>
+                  <AppButton title="Zapisz skan" onPress={save} loading={saving} />
+                  <AppButton title="Anuluj" variant="ghost" onPress={() => setEvaluating(false)} disabled={saving} />
+                </>
+              ) : (
+                <>
+                  <Text style={styles.hint}>
+                    Zapisz ten skan do zbioru testowego (D-003): zdjęcia i poprawiona lista trafią na laptopa, a model
+                    dostanie ocenę.
+                  </Text>
+                  <AppButton
+                    title="Przygotuj zapis do ewaluacji"
+                    variant="secondary"
+                    onPress={() => setEvaluating(true)}
+                  />
+                </>
+              )}
+            </Card>
+          )}
+
           <AppButton title="Nowy skan" variant="secondary" onPress={reset} />
         </>
       )}

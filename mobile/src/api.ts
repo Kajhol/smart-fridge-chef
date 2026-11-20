@@ -3,6 +3,7 @@ import { File } from 'expo-file-system';
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 const SHORT_TIMEOUT_MS = 5_000;
 const SCAN_TIMEOUT_MS = 90_000;
+const SAVE_TIMEOUT_MS = 30_000;
 
 export type Health = {
   status: string;
@@ -30,6 +31,37 @@ export type IngredientOption = {
   name_pl: string;
   unit: Unit;
   custom: boolean;
+};
+
+// Ewaluacja (D-003): czy produkt widać na zdjęciach. hidden = jest w lodówce, ale na zdjęciach go nie ma.
+export type Visibility = 'visible' | 'partial' | 'hidden';
+
+export type TruthItem = {
+  ingredient_id: string | null;
+  label: string;
+  quantity: number;
+  unit: Unit;
+  visibility: Visibility;
+};
+
+// Część ScanMetrics z evaluation.py, której używa aplikacja.
+export type ScanMetrics = {
+  expected: number;
+  predicted: number;
+  found: number;
+  recall: number | null;
+  recall_seen: number | null;
+  precision: number | null;
+  f1: number | null;
+  missed: string[];
+  hallucinations: string[];
+  duplicates: string[];
+  unknown_expected: number;
+};
+
+export type SavedScan = {
+  scan_id: string;
+  metrics: ScanMetrics;
 };
 
 export type ZonePhoto = {
@@ -92,7 +124,7 @@ export function addIngredient(name_pl: string, unit: Unit): Promise<IngredientOp
   );
 }
 
-export function scanFridge(photos: ZonePhoto[]): Promise<ScanResult> {
+function photosForm(photos: ZonePhoto[]): FormData {
   const body = new FormData();
   for (const photo of photos) {
     // fetch z Expo (SDK 58) nie przyjmuje starego { uri, name, type } z React Native,
@@ -100,5 +132,25 @@ export function scanFridge(photos: ZonePhoto[]): Promise<ScanResult> {
     body.append('photos', new File(photo.uri));
     body.append('zones', photo.zone);
   }
-  return request<ScanResult>('/scan', { method: 'POST', body }, SCAN_TIMEOUT_MS);
+  return body;
+}
+
+export function scanFridge(photos: ZonePhoto[]): Promise<ScanResult> {
+  return request<ScanResult>('/scan', { method: 'POST', body: photosForm(photos) }, SCAN_TIMEOUT_MS);
+}
+
+// Zapis do zbioru testowego: te same zdjęcia, odpowiedź modelu bez poprawek i lista po korekcie (wzorzec).
+export function saveScan(
+  photos: ZonePhoto[],
+  prediction: ScanResult,
+  items: TruthItem[],
+  seconds: number | null,
+): Promise<SavedScan> {
+  const body = photosForm(photos);
+  body.append('prediction', JSON.stringify(prediction));
+  body.append('truth_items', JSON.stringify(items));
+  if (seconds !== null) {
+    body.append('seconds', String(seconds));
+  }
+  return request<SavedScan>('/scans', { method: 'POST', body }, SAVE_TIMEOUT_MS);
 }

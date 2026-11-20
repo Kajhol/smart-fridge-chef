@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import type { Confidence, DetectedItem, IngredientOption, Unit } from './api';
+import type { Confidence, DetectedItem, IngredientOption, Unit, Visibility } from './api';
 import IngredientSheet from './IngredientSheet';
 import { colors, font, radius, spacing } from './theme';
 import { AppButton, Badge, Card } from './ui';
@@ -14,7 +14,14 @@ export type FridgeItem = {
   quantity: number;
   unit: Unit;
   confidence?: Confidence;
+  visibility?: Visibility; // tylko przy zapisie do ewaluacji; brak = visible
 };
+
+const VISIBILITY_OPTIONS: { value: Visibility; label: string }[] = [
+  { value: 'visible', label: 'widać' },
+  { value: 'partial', label: 'częściowo' },
+  { value: 'hidden', label: 'schowane' },
+];
 
 const UNIT_LABELS: Record<Unit, string> = { pcs: 'szt.', g: 'g', ml: 'ml' };
 
@@ -65,12 +72,13 @@ type Props = {
   ingredients: IngredientOption[];
   onChange: (items: FridgeItem[]) => void;
   onIngredientCreated: (ingredient: IngredientOption) => void;
+  showVisibility?: boolean;
 };
 
 // Co jest otwarte w oknie wyszukiwania: dodawanie nowej pozycji albo zmiana istniejącej.
 type Sheet = { mode: 'new' } | { mode: 'edit'; key: string };
 
-export default function ItemsEditor({ items, ingredients, onChange, onIngredientCreated }: Props) {
+export default function ItemsEditor({ items, ingredients, onChange, onIngredientCreated, showVisibility }: Props) {
   const [sheet, setSheet] = useState<Sheet | null>(null);
   const editedItem = sheet?.mode === 'edit' ? items.find((item) => item.key === sheet.key) : undefined;
 
@@ -139,6 +147,22 @@ export default function ItemsEditor({ items, ingredients, onChange, onIngredient
               </Pressable>
             </View>
 
+            {showVisibility && (
+              <View style={styles.visibility}>
+                {VISIBILITY_OPTIONS.map((option) => {
+                  const active = (item.visibility ?? 'visible') === option.value;
+                  return (
+                    <Pressable
+                      key={option.value}
+                      onPress={() => update(item.key, { visibility: option.value })}
+                      style={[styles.visibilityOption, active && styles.visibilityActive]}
+                    >
+                      <Text style={[styles.visibilityText, active && styles.visibilityTextActive]}>{option.label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
           </Card>
         );
       })}
@@ -240,5 +264,29 @@ const styles = StyleSheet.create({
   },
   remove: {
     color: colors.danger,
+  },
+  visibility: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  visibilityOption: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: spacing.xs + 2,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  visibilityActive: {
+    backgroundColor: colors.infoSoft,
+    borderColor: colors.info,
+  },
+  visibilityText: {
+    fontSize: font.small,
+    color: colors.muted,
+  },
+  visibilityTextActive: {
+    color: colors.info,
+    fontWeight: '600',
   },
 });
