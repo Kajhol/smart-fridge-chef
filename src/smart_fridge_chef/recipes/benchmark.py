@@ -328,7 +328,10 @@ def main() -> None:
     paths = [p / "ground_truth.json" if p.is_dir() else p for p in args.scans] or sorted(
         SCANS_DIR.glob("*/ground_truth.json")
     )
-    db = sqlite3.connect(f"{(args.db or database_path()).resolve().as_uri()}?mode=ro", uri=True)
+    db_path = args.db or database_path()
+    if not db_path.exists():
+        raise SystemExit(f"Brak bazy przepisów: {db_path}. Najpierw `uv run import-recipes` (README) albo podaj --db.")
+    db = sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True)
     main_calls = Calls(args.model)
     baseline = Calls(args.baseline) if args.baseline else None
     result = run(db, [load_scan(p) for p in paths], {p: PROFILES[p] for p in args.profiles}, main_calls, baseline,
