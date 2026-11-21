@@ -1,5 +1,7 @@
 # Smart Fridge Chef
 
+Robisz telefonem kilka zdjęć lodówki, a aplikacja rozpoznaje produkty (Vision LLM, domyślnie Gemini), daje poprawić listę i proponuje do 3 przepisów z bazy Food.com, dopasowanych do tego, co masz, oraz do Twoich alergii i preferencji. Przepisy wybiera i tłumaczy na polski drugi LLM. Klucze API są tylko w backendzie (FastAPI), aplikacja (Expo) zna jedynie jego adres.
+
 Dokumentacja: [docs/specyfikacja.md](docs/specyfikacja.md) (decyzje i otwarte pytania), [docs/Smart-Fridge-Chef-PoC.pdf](docs/Smart-Fridge-Chef-PoC.pdf) (założenia PoC).
 
 ## Uruchomienie
@@ -33,7 +35,7 @@ uv run fastapi dev src/smart_fridge_chef/api.py
 | `GET /ingredients` | Słownik składników i produkty dodane z aplikacji (pole `custom`) |
 | `POST /ingredients` | Dodaje produkt do słownika z aplikacji (D-011), zapis w `data/custom_ingredients.json` (poza gitem) |
 | `POST /scans` | Zapisuje skan do ewaluacji (D-003) w kolejnym `data/scans/scan_NNN/` i zwraca metryki |
-| `POST /recipes` | Lista z lodówki i profil (`RecipeRequest`) → najwyżej 3 przepisy (`RecipeResponse`, D-012). Wymaga bazy przepisów (niżej), bez niej zwraca 503 |
+| `POST /recipes` | Lista z lodówki i profil (`RecipeRequest`) → najwyżej 3 przepisy po polsku, pytania „Masz X?” i lista zakupów (`RecipeResponse`, D-012, D-013, D-015). Wymaga bazy przepisów (niżej), bez niej zwraca 503 |
 
 ## Aplikacja mobilna (Expo)
 
@@ -66,6 +68,10 @@ npx expo start --clear
 Na telefonie zeskanuj kod QR (Android: w Expo Go, iPhone: aparatem). Telefon musi być w tej samej sieci Wi-Fi co laptop. `--clear` jest potrzebne przy pierwszym uruchomieniu i po zmianie `.env.local`, później wystarczy `npx expo start`.
 
 **Co robi aplikacja:** sprawdza połączenie z backendem, prowadzi przez zdjęcia trzech stref (D-001; aparat albo galeria), wysyła je do `POST /scan` i pokazuje listę do korekty: ilości, usuwanie, zmiana nazwy przez wyszukiwarkę słownika, dodawanie produktów (D-006, D-011). Po korekcie skan można zapisać do ewaluacji (niżej).
+
+Przycisk „Szukaj przepisów” na dole ekranu otwiera przepisy z `POST /recipes`: czas, trudność, kcal, składniki w kolorach (zielone: masz, czerwone: brakuje, szare: podstawy z szafki), a po rozwinięciu składniki z ilościami, kroki i link do oryginału. Przepisy ułożone przez AI, gdy z bazy nic nie pasuje, mają osobną plakietkę. „⚙ Profil” w nagłówku ustawia alergie, składniki, których nie jesz, maksymalny czas, trudność i liczbę porcji. Profil zapisuje się na telefonie i trafia do każdego wyszukiwania.
+
+Jedno wyszukiwanie przepisów to do 4 wywołań LLM, a darmowy Gemini ma limit 15 zapytań na minutę na model. Kilka wyszukiwań pod rząd może skończyć się błędem 429; wtedy odczekaj minutę.
 
 **Jeśli nie działa:**
 
@@ -106,6 +112,21 @@ Z kluczem dla modelu z `RECIPE_MODEL` (`GEMINI_API_KEY` albo `GROQ_API_KEY` dla 
 Odpowiedź `POST /recipes` ma też `questions` (do 3 produktów do dopytania, np. „Masz masło?”, z liczbą przepisów, które odblokują) i `shopping_list` (braki ze zwróconych przepisów), D-015. `uv run eval-questions` mierzy pytania bez LLM i zapisuje do `data/eval/` same liczby.
 
 `uv run audit-allergens` sprawdza gotową bazę: wypisuje linie składników, które sugerują alergen, którego przepis nie ma w tabeli `recipe_allergens` (wynik czyta człowiek, są fałszywe alarmy).
+
+## Testy
+
+Backend (z głównego folderu repo):
+
+```
+uv run pytest -q
+```
+
+Aplikacja (z `mobile/`): sprawdzenie typów i lint.
+
+```
+npx tsc --noEmit
+npx expo lint
+```
 
 ## Dodawanie paczek
 
