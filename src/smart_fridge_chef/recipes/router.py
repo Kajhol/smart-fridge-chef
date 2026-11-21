@@ -6,6 +6,7 @@ Do odpowiedzi dochodzą pytania doprecyzowujące i lista zakupów (M5), liczone 
 import json
 import os
 import sqlite3
+import time
 from pathlib import Path
 from typing import Annotated
 
@@ -42,7 +43,12 @@ def get_llm() -> LLM | None:
     # lokalna Ollama nie potrzebuje klucza
     if not model.startswith(llm.OLLAMA_PREFIX) and not any(os.getenv(name) for name in keys):
         return None
-    return lambda prompt, system_prompt, schema: llm.generate(prompt, system_prompt, schema, model)
+    # Budżet liczy się od początku zapytania (Depends woła get_llm raz na zapytanie). Po jego końcu chef
+    # dostaje BudgetExceeded i oddaje to, co ma: ranking z SQL albo tekst bez tłumaczenia (M5.5).
+    deadline = time.monotonic() + llm.request_budget(model)
+    return lambda prompt, system_prompt, schema: llm.generate(
+        prompt, system_prompt, schema, model, deadline=deadline
+    )
 
 
 def connect(path: Path) -> sqlite3.Connection:
