@@ -138,3 +138,25 @@ def test_import_ratings(tmp_path):
     # średnia wszystkich ocen to 14/3; przy wadze 5 jedna piątka nie bije dwóch ocen 4,5
     (rating_1001,), (rating_1003,) = db.execute("SELECT rating FROM recipes ORDER BY id").fetchall()
     assert rating_1003 < 5 and rating_1001 < 5
+
+
+def test_alternatives_in_ingredient_lines_add_allergens():
+    """Zamiennik w linii („or almond extract”) może trafić do garnka, więc jego alergen trafia do przepisu."""
+    from smart_fridge_chef.recipes.importer import alternative_allergens
+
+    assert alternative_allergens(["2 teaspoons vanilla or 2 teaspoons almond extract"]) == {"nuts"}
+    assert alternative_allergens(["1 1/2 cups milk (or soy milk)"]) == {"milk", "soy"}
+    assert alternative_allergens(["1 tablespoon cider vinegar or 1 tablespoon malt vinegar"]) == {"gluten"}
+    assert alternative_allergens(["1 lb filet of beef or 24 raw shrimp, peeled"]) == {"crustaceans"}
+    assert "fish" in alternative_allergens(["1 dash tabasco sauce or 1 dash worcestershire sauce"])
+
+
+def test_alternative_check_skips_plain_lines_and_false_alarms():
+    from smart_fridge_chef.recipes.importer import alternative_allergens
+
+    assert alternative_allergens(["1 cup peanut butter"]) == set()  # bez zamiennika ufamy mapowaniu
+    assert alternative_allergens(["1 (14 ounce) can coconut milk"]) == set()
+    assert alternative_allergens(["6 lbs crab apples (or tart apples)"]) == set()
+    assert alternative_allergens(["1/4 teaspoon cream of tartar (optional)"]) == set()
+    assert alternative_allergens(["2 tablespoons lemon juice or 2 tablespoons white vinegar"]) == set()
+    assert alternative_allergens(["2 tablespoons cider vinegar or 2 tablespoons red wine vinegar"]) == {"sulphites"}
