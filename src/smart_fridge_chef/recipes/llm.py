@@ -19,6 +19,9 @@ Schema = TypeVar("Schema", bound=BaseModel)
 
 RETRIES = 3  # przy przeciążeniu dostawcy (429, 5xx) ponawiamy z rosnącą przerwą
 RETRY_DELAY_S = 2.0
+# Jedno wywołanie trwa zwykle 1–2 s. Bez limitu zawieszone wywołanie blokuje /recipes, aż aplikacja sama się
+# podda (60 s). Po przekroczeniu chef wraca do rankingu z SQL. Przekroczenia nie ponawiamy: to nie 429/5xx.
+TIMEOUT_S = 15
 
 
 def transient(error: Exception) -> bool:
@@ -41,7 +44,7 @@ def call_gemini(
     prompt: str, system_prompt: str, schema: type[Schema], model: str, client: Any = None,
     usage: list[dict] | None = None,
 ) -> Schema:
-    client = client or genai.Client()
+    client = client or genai.Client(http_options=types.HttpOptions(timeout=TIMEOUT_S * 1000))  # w milisekundach
     response = client.models.generate_content(
         model=model,
         contents=prompt,
@@ -82,7 +85,7 @@ def call_groq(
     prompt: str, system_prompt: str, schema: type[Schema], model: str, client: Any = None,
     usage: list[dict] | None = None,
 ) -> Schema:
-    client = client or OpenAI(base_url=GROQ_BASE_URL, api_key=os.getenv("GROQ_API_KEY"))
+    client = client or OpenAI(base_url=GROQ_BASE_URL, api_key=os.getenv("GROQ_API_KEY"), timeout=TIMEOUT_S)
     return call_openai_compatible(prompt, system_prompt, schema, model, client, usage)
 
 
