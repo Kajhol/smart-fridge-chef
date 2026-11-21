@@ -334,6 +334,21 @@ smart-fridge-chef/
 - **Lista zakupów:** braki (`status: missing`) z 3 zwróconych przepisów, każdy produkt raz, z tytułami przepisów, które go potrzebują. Bez ilości: linie z ilościami są w przepisie (`ingredient_lines`), a mapowanie linii na składnik nie jest jednoznaczne.
 - **Pomiar:** `uv run eval-questions` (bez LLM, kilka sekund) dla skanów i profili z D-014 liczy przyrost przepisów po „tak” na wszystkie pytania i test pominięcia: usuwamy z lodówki po jednym produkcie (jak gdyby skan go nie zobaczył) i sprawdzamy, czy trafi do pytań. Na kopii HF i `scan_001`: mediana 367 → 747 przepisów po „tak”, pominięty produkt w pytaniach w 19% przypadków, w których jego brak zmniejsza liczbę przepisów. Pytania wskazują produkty, które odblokowują najwięcej przepisów, a nie te, których skan nie zauważył, stąd niski odsetek. Wynik to same liczby i ID ze słownika, więc plik można przesłać.
 
+### D-016: Limity czasu LLM i porównanie modeli (LLM clash)
+
+- **Data:** 21.11.2026
+- **Autor:** Igor
+- **Status: przyjęta** (Igor)
+- **Doprecyzowuje:** D-013, D-014
+
+**Problem.** W pierwszym przebiegu `eval-recipes` (20.11) jedno wywołanie Gemini zawisło przy przeciążeniu i p90 czasu zapytania wyszło 188 s przy medianie 5,5 s. Timeout 15 s na wywołanie (b6d6609) ucina zawieszenie, ale bez ponawiania jeden timeout od razu oznacza ranking z SQL zamiast wyboru LLM, a kilka wywołań po 15 s nadal może przekroczyć 60 s, na które czeka aplikacja. Klient OpenAI (Groq, Ollama) dodatkowo po cichu ponawiał 2 razy na własną rękę.
+
+**Decyzja.**
+
+- **Timeout na wywołanie:** 15 s dla modeli w chmurze (wartość z b6d6609), 120 s dla lokalnych (`ollama/...`, pierwsze wywołanie ładuje model). Timeout i błąd połączenia traktujemy jak 429/5xx: ponawiamy (3 próby, rosnąca przerwa). Ponawia tylko `llm.generate`, SDK mają ponawianie wyłączone.
+- **Budżet na zapytanie:** 45 s na wszystkie wywołania LLM jednego `POST /recipes` (aplikacja czeka 60 s), 300 s dla modeli lokalnych. Limit kolejnej próby jest przycinany do czasu, który został. Po końcu budżetu nie zaczynamy nowego wywołania: `chef` oddaje to, co ma (ranking z SQL, tekst bez tłumaczenia albo opis z szablonu), tak jak przy każdym innym błędzie LLM. Zmienne `LLM_TIMEOUT_S` i `RECIPES_BUDGET_S` w `.env` nadpisują wartości domyślne. `eval-recipes` liczy budżet tak samo (`--budget` zmienia go w ewaluacji) i podaje liczbę timeoutów (`llm_timeouts`).
+- **LLM clash:** `uv run eval-clash` puszcza ten sam zestaw skan × profil dla kilku modeli i zapisuje jedną tabelę: naruszenia, podejrzane, zapytania z błędem LLM, timeouty, mediana i p90 czasu, koszt, odsetek nieprzetłumaczonych wpisów, przepisy od AI. Domyślnie Gemini 3.1 Flash-Lite i Groq gpt-oss-120b. Modele lokalne (`--local ollama/<model>`) idą tylko na komputerze z kartą NVIDIA (wykrywanie przez `nvidia-smi`, także w WSL) i z działającą Ollamą, w której model jest pobrany; inaczej są pomijane z podanym powodem. Na samym CPU czasy nie są porównywalne, więc to trzeba wymusić `--allow-cpu`. Przed pomiarem model lokalny dostaje jedno wywołanie rozgrzewające. Wynik (`data/eval/clash_*.json` i `.md`) to same liczby, z nazwą karty i VRAM, bo od nich zależą czasy modeli lokalnych. Jakość tłumaczeń między dwoma modelami dalej ocenia się ślepo arkuszem z `eval-recipes --baseline`.
+
 ## Otwarte pytania
 
 | Nr | Pytanie | Propozycja | Kto / do kiedy |

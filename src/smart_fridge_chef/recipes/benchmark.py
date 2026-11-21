@@ -70,27 +70,37 @@ class Calls:
 
     model: str
     client: Any = None
+    budget_s: float | None = None  # czas na jedno zapytanie jak w /recipes; None = llm.request_budget(model)
     usage: list[dict] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    timeouts: int = 0
     calls: int = 0
+    deadline: float | None = None
 
     def __call__(self, prompt: str, system_prompt: str, schema: type) -> Any:
         self.calls += 1
         try:
-            return llm.generate(prompt, system_prompt, schema, self.model, self.client, self.usage)
+            return llm.generate(
+                prompt, system_prompt, schema, self.model, self.client, self.usage, deadline=self.deadline
+            )
         except Exception as error:
+            if isinstance(error, TimeoutError) or "timeout" in type(error).__name__.lower():
+                self.timeouts += 1
             self.errors.append(redact(f"{schema.__name__}: {type(error).__name__}: {error}")[:300])
             raise
 
     def take(self) -> dict:
-        """Stan od ostatniego `take` i wyzerowanie liczników."""
+        """Stan od ostatniego `take`, wyzerowanie liczników i nowy budżet czasu na następne zapytanie."""
         state = {
             "calls": self.calls,
             "errors": self.errors,
+            "timeouts": self.timeouts,
             "input_tokens": sum(u["input_tokens"] for u in self.usage),
             "output_tokens": sum(u["output_tokens"] for u in self.usage),
         }
-        self.usage, self.errors, self.calls = [], [], 0
+        self.usage, self.errors, self.calls, self.timeouts = [], [], 0, 0
+        budget = self.budget_s if self.budget_s is not None else llm.request_budget(self.model)
+        self.deadline = time.monotonic() + budget
         return state
 
 
@@ -271,6 +281,7 @@ def summarize(result: dict, prices: tuple[float, float] | None = None) -> dict:
         "seconds_p90": round(percentile(seconds, 0.9), 2),
         "llm_calls_per_request": round(sum(row["calls"] for row in rows) / n, 1),
         "requests_with_llm_errors": sum(bool(row["errors"]) for row in rows),
+        "llm_timeouts": sum(row.get("timeouts", 0) for row in rows),
         "input_tokens_per_request": round(input_tokens / n),
         "output_tokens_per_request": round(output_tokens / n),
         "usd_per_request": None if per_request is None else round(per_request, 5),
@@ -338,6 +349,8 @@ def main() -> None:
     parser.add_argument("--profiles", nargs="*", default=list(PROFILES), choices=list(PROFILES))
     parser.add_argument("--repeats", type=int, default=1)
     parser.add_argument("--price", type=float, nargs=2, metavar=("IN", "OUT"), help="USD za 1 mln tokenów")
+    parser.add_argument("--budget", type=float, default=None,
+                        help="sekundy na jedno zapytanie (domyślnie jak w /recipes: 45, lokalnie 300)")
     args = parser.parse_args()
 
     paths = [p / "ground_truth.json" if p.is_dir() else p for p in args.scans] or sorted(
@@ -347,8 +360,8 @@ def main() -> None:
     if not db_path.exists():
         raise SystemExit(f"Brak bazy przepisów: {db_path}. Najpierw `uv run import-recipes` (README) albo podaj --db.")
     db = sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True)
-    main_calls = Calls(args.model)
-    baseline = Calls(args.baseline) if args.baseline else None
+    main_calls = Calls(args.model, budget_s=args.budget)
+    baseline = Calls(args.baseline, budget_s=args.budget) if args.baseline else None
     result = run(db, [load_scan(p) for p in paths], {p: PROFILES[p] for p in args.profiles}, main_calls, baseline,
                  args.repeats)
     db.close()
@@ -375,20 +388,26 @@ def main() -> None:
 
 def shareable(result: dict) -> dict:
     """Same liczby z wyniku `eval-recipes`: bez tytułów, kroków i linii z Food.com (D-010)."""
-    rows = [
+    return {"model": result["model"], "baseline": result["baseline"], "summary": result["summary"],
+            "rows": shareable_rows(result["rows"])}
+
+
+def shareable_rows(rows: list[dict]) -> list[dict]:
+    """Wiersze wyniku bez tekstów przepisów: liczby i ID."""
+    return [
         {key: row[key] for key in ("scan", "profile", "attempt", "seconds", "candidates", "calls",
                                     "input_tokens", "output_tokens")}
         | {
             "errors": len(row["errors"]),
+            "timeouts": row.get("timeouts", 0),
             "recipes": [
                 {"id": r["id"], "source": r["source"], "violations": len(r["violations"]),
                  "suspects": len(r["suspects"]), "untranslated": r.get("untranslated"), "entries": r.get("entries")}
                 for r in row["recipes"]
             ],
         }
-        for row in result["rows"]
+        for row in rows
     ]
-    return {"model": result["model"], "baseline": result["baseline"], "summary": result["summary"], "rows": rows}
 
 
 def secrets(env_file: Path) -> list[str]:

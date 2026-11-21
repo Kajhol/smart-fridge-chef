@@ -24,6 +24,7 @@ audit-allergens = "smart_fridge_chef.recipes.audit:main"
 eval-recipes = "smart_fridge_chef.recipes.benchmark:main"
 eval-recipes-share = "smart_fridge_chef.recipes.benchmark:share_main"
 eval-questions = "smart_fridge_chef.recipes.benchmark:questions_main"
+eval-clash = "smart_fridge_chef.recipes.clash:main"
 
 [build-system]
 requires = ["uv_build>=0.12.24,<0.13.0"]

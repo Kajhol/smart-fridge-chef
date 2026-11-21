@@ -142,3 +142,62 @@ def test_permanent_errors_are_not_retried(monkeypatch):
     with pytest.raises(BadKey):
         llm.generate("p", "s", RecipeSelection, "gemini-3.1-flash-lite", client)
     assert len(attempts) == 1
+
+
+def test_timeouts_are_retried(monkeypatch):
+    import httpx
+
+    monkeypatch.setattr(llm, "RETRY_DELAY_S", 0)
+    attempts = []
+
+    def generate_content(**kwargs):
+        attempts.append(1)
+        if len(attempts) < 2:
+            raise httpx.ReadTimeout("slow")
+        return SimpleNamespace(text=json.dumps(SELECTION))
+
+    client = SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))
+    assert llm.generate("p", "s", RecipeSelection, "gemini-3.1-flash-lite", client).picks
+    assert len(attempts) == 2
+
+
+def test_no_call_after_the_request_budget_is_spent():
+    import time
+
+    attempts = []
+    client = SimpleNamespace(models=SimpleNamespace(generate_content=lambda **kw: attempts.append(1)))
+    with pytest.raises(llm.BudgetExceeded):
+        llm.generate("p", "s", RecipeSelection, "gemini-3.1-flash-lite", client, deadline=time.monotonic() - 1)
+    assert attempts == []
+
+
+def test_retry_is_skipped_when_the_wait_would_pass_the_budget(monkeypatch):
+    import time
+
+    monkeypatch.setattr(llm, "RETRY_DELAY_S", 30)
+    attempts = []
+
+    class Overloaded(Exception):
+        code = 503
+
+    def generate_content(**kwargs):
+        attempts.append(1)
+        raise Overloaded("high demand")
+
+    client = SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))
+    with pytest.raises(Overloaded):
+        llm.generate("p", "s", RecipeSelection, "gemini-3.1-flash-lite", client, deadline=time.monotonic() + 10)
+    assert len(attempts) == 1
+
+
+def test_call_timeout_is_capped_by_the_budget(monkeypatch):
+    import time
+
+    monkeypatch.delenv("LLM_TIMEOUT_S", raising=False)
+    assert llm.remaining_timeout("gemini-3.1-flash-lite", None) == llm.CALL_TIMEOUT_S
+    assert llm.remaining_timeout("ollama/qwen2.5:7b", None) == llm.LOCAL_CALL_TIMEOUT_S
+    assert llm.remaining_timeout("gemini-3.1-flash-lite", time.monotonic() + 5) <= 5
+    monkeypatch.setenv("LLM_TIMEOUT_S", "7")
+    assert llm.call_timeout("gemini-3.1-flash-lite") == 7
+    monkeypatch.setenv("RECIPES_BUDGET_S", "12")
+    assert llm.request_budget("groq/x") == 12
