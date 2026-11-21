@@ -1,4 +1,7 @@
-"""POST /recipes (D-009, D-012, D-013): kandydaci z SQL, wybór i tłumaczenie przez LLM, bez LLM ranking z SQL."""
+"""POST /recipes (D-009, D-012, D-013, D-015): kandydaci z SQL, wybór i tłumaczenie przez LLM, bez LLM ranking z SQL.
+
+Do odpowiedzi dochodzą pytania doprecyzowujące i lista zakupów (M5), liczone kodem.
+"""
 
 import json
 import os
@@ -10,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from smart_fridge_chef.recipes import llm
 from smart_fridge_chef.recipes.chef import LLM, SELECTION_POOL, suggest
+from smart_fridge_chef.recipes.questions import find_questions, shopping_list
 from smart_fridge_chef.recipes.schema import (
     Recipe,
     RecipeIngredient,
@@ -97,9 +101,12 @@ def recommend(db: sqlite3.Connection, request: RecipeRequest, model: LLM | None)
     candidates = find_candidates(db, request.items, request.profile)
     fridge = set(fridge_ids(request.items))
     pool = [build_recipe(db, c, fridge) for c in candidates[:SELECTION_POOL]]
+    chosen = suggest(db, pool, request.items, request.profile, model)
     return RecipeResponse(
-        recipes=suggest(db, pool, request.items, request.profile, model),
+        recipes=chosen,
         candidates_considered=len(candidates),
+        questions=find_questions(db, request.items, request.profile),
+        shopping_list=shopping_list(chosen),
     )
 
 

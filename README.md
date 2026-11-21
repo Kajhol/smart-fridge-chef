@@ -103,6 +103,8 @@ Z kluczem dla modelu z `RECIPE_MODEL` (`GEMINI_API_KEY` albo `GROQ_API_KEY` dla 
 
 `uv run eval-recipes` mierzy `/recipes` na skanach z `data/scans/*/ground_truth.json` i 5 profilach z alergenami (D-014): naruszenia alergenów, czas, tokeny i koszt (`--price IN OUT`, USD za 1 mln tokenów), a z `--baseline groq/openai/gpt-oss-120b` także arkusz do oceny tłumaczeń. Wyniki trafiają do `data/eval/` (poza gitem). `uv run eval-recipes-share` robi z najnowszego wyniku plik do wysłania: same liczby, bez tekstów przepisów, i odmawia zapisu, jeśli w środku jest klucz API z `.env`.
 
+Odpowiedź `POST /recipes` ma też `questions` (do 3 produktów do dopytania, np. „Masz masło?”, z liczbą przepisów, które odblokują) i `shopping_list` (braki ze zwróconych przepisów), D-015. `uv run eval-questions` mierzy pytania bez LLM i zapisuje do `data/eval/` same liczby.
+
 `uv run audit-allergens` sprawdza gotową bazę: wypisuje linie składników, które sugerują alergen, którego przepis nie ma w tabeli `recipe_allergens` (wynik czyta człowiek, są fałszywe alarmy).
 
 ## Dodawanie paczek
