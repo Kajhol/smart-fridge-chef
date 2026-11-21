@@ -149,6 +149,9 @@ def test_alternatives_in_ingredient_lines_add_allergens():
     assert alternative_allergens(["1 tablespoon cider vinegar or 1 tablespoon malt vinegar"]) == {"gluten"}
     assert alternative_allergens(["1 lb filet of beef or 24 raw shrimp, peeled"]) == {"crustaceans"}
     assert "fish" in alternative_allergens(["1 dash tabasco sauce or 1 dash worcestershire sauce"])
+    # „peanut butter” nie niesie mleka, ale orzeszki tak (prawdziwy przepis fc_hf64973)
+    assert alternative_allergens(["6 ounces chocolate chips or 6 ounces peanut butter chips"]) == {"milk", "peanuts"}
+    assert alternative_allergens(["1/2 cup tahini (or peanut butter)"]) == {"sesame", "peanuts"}
 
 
 def test_alternative_check_skips_plain_lines_and_false_alarms():

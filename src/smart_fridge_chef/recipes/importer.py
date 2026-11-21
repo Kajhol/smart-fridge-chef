@@ -61,7 +61,9 @@ KEYWORDS = {
 ALTERNATIVE = re.compile(r"\bor\b|\(|\bsub(stitute)?\b|\binstead\b")
 # Fragmenty, które pasują do KEYWORDS, a alergenu nie niosą (fałszywe alarmy z audytu). Ocet spirytusowy
 # i jabłkowy traktujemy jak słownik (bez siarczynów); ocet winny łapie słowo „wine”.
-NOT_ALLERGENS = re.compile(r"peanut butter|cream of tartar|coconut (milk|cream)|crab ?apples?|butternut|vinegar")
+NOT_ALLERGENS = re.compile(r"cream of tartar|coconut (milk|cream)|crab ?apples?|butternut|vinegar")
+# „Peanut butter” to nie masło (bez mleka), ale orzeszki zostają: zamieniamy na samo „peanut”, nie wycinamy.
+PEANUT_BUTTER = re.compile(r"peanut butter")
 
 
 def alternative_allergens(lines: list[str]) -> set[str]:
@@ -70,6 +72,7 @@ def alternative_allergens(lines: list[str]) -> set[str]:
     for line in lines:
         text = line.lower()
         if ALTERNATIVE.search(text):
+            text = PEANUT_BUTTER.sub("peanut", text)
             text = NOT_ALLERGENS.sub(" ", text)
             found |= {allergen for allergen, pattern in KEYWORDS.items() if re.search(pattern, text)}
     return found
