@@ -21,6 +21,7 @@ from dotenv import load_dotenv
 from smart_fridge_chef.recipes import llm
 from smart_fridge_chef.recipes.audit import KEYWORDS
 from smart_fridge_chef.recipes.chef import Guard, translate
+from smart_fridge_chef.recipes.questions import find_questions
 from smart_fridge_chef.recipes.router import database_path, recommend
 from smart_fridge_chef.recipes.schema import (
     FridgeItem,
@@ -28,6 +29,7 @@ from smart_fridge_chef.recipes.schema import (
     RecipeRequest,
     UserProfile,
 )
+from smart_fridge_chef.recipes.search import find_candidates
 
 ROOT = Path(__file__).parents[3]
 SCANS_DIR = ROOT / "data" / "scans"
@@ -416,3 +418,87 @@ def share_main() -> None:
     out = args.out or OUT_DIR / f"share_{source.name}"
     out.write_text(text, encoding="utf-8")
     print(f"OK, bez kluczy i tekstów przepisów: {out}")
+
+
+# --- Pytania doprecyzowujące (M5, D-015) -------------------------------------
+
+
+def with_item(items: list[FridgeItem], ingredient_id: str) -> list[FridgeItem]:
+    return [*items, FridgeItem(ingredient_id=ingredient_id, label=ingredient_id, quantity=1, unit="pcs")]
+
+
+def question_rows(db: sqlite3.Connection, scan: str, items: list[FridgeItem], name: str, profile: UserProfile) -> dict:
+    """Zysk z pytań („tak” na wszystkie) i test pominięcia: czy pytania wskażą produkt, którego skan nie zobaczył."""
+    base = len(find_candidates(db, items, profile))
+    questions = find_questions(db, items, profile)
+    yes = items
+    for question in questions:
+        yes = with_item(yes, question.ingredient_id)
+
+    dropped = []
+    pantry = {row[0] for row in db.execute("SELECT ingredient_id FROM pantry_staples")}
+    for item in items:
+        if not item.ingredient_id or item.ingredient_id in pantry:
+            continue
+        rest = [i for i in items if i is not item]
+        lost = base - len(find_candidates(db, rest, profile))
+        asked = [q.ingredient_id for q in find_questions(db, rest, profile)]
+        dropped.append({"ingredient_id": item.ingredient_id, "candidates_lost": lost,
+                        "asked": item.ingredient_id in asked})
+    return {
+        "scan": scan, "profile": name, "candidates": base,
+        "questions": [q.ingredient_id for q in questions], "unlocks": [q.unlocks for q in questions],
+        "candidates_if_yes": len(find_candidates(db, yes, profile)), "dropped": dropped,
+    }
+
+
+def summarize_questions(rows: list[dict]) -> dict:
+    dropped = [d for row in rows for d in row["dropped"]]
+    important = [d for d in dropped if d["candidates_lost"] > 0]
+
+    def share(items: list[dict]) -> float | None:
+        return round(sum(d["asked"] for d in items) / len(items), 3) if items else None
+
+    return {
+        "requests": len(rows),
+        "with_questions": sum(bool(row["questions"]) for row in rows),
+        "candidates_median": percentile([row["candidates"] for row in rows], 0.5),
+        "candidates_if_yes_median": percentile([row["candidates_if_yes"] for row in rows], 0.5),
+        "top_question_unlocks_median": percentile([row["unlocks"][0] for row in rows if row["unlocks"]], 0.5),
+        "dropped_items": len(dropped),
+        "dropped_asked_share": share(dropped),
+        "important_dropped_items": len(important),
+        "important_dropped_asked_share": share(important),
+    }
+
+
+def questions_main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Ewaluacja pytań doprecyzowujących (M5): bez LLM, wynik to same liczby i ID ze słownika."
+    )
+    parser.add_argument("scans", nargs="*", type=Path, help="ground_truth.json albo folder skanu; domyślnie wszystkie")
+    parser.add_argument("--db", type=Path, default=None)
+    parser.add_argument("--profiles", nargs="*", default=list(PROFILES), choices=list(PROFILES))
+    args = parser.parse_args()
+
+    paths = [p / "ground_truth.json" if p.is_dir() else p for p in args.scans] or sorted(
+        SCANS_DIR.glob("*/ground_truth.json")
+    )
+    db_path = args.db or database_path()
+    if not db_path.exists():
+        raise SystemExit(f"Brak bazy przepisów: {db_path}. Najpierw `uv run import-recipes` (README) albo podaj --db.")
+    db = sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True)
+    rows = [question_rows(db, scan, items, name, PROFILES[name])
+            for scan, items in map(load_scan, paths) for name in args.profiles]
+    db.close()
+
+    summary = summarize_questions(rows)
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    out = OUT_DIR / f"questions_{datetime.now().astimezone().strftime('%Y%m%d-%H%M')}.json"
+    out.write_text(json.dumps({"summary": summary, "rows": rows}, ensure_ascii=False, indent=1), encoding="utf-8")
+    for row in rows:
+        asked = sum(d["asked"] for d in row["dropped"])
+        print(f"{row['scan']} / {row['profile']}: {row['candidates']} -> {row['candidates_if_yes']} przepisów "
+              f"po „tak”, pytania {row['questions']}, pominięty produkt wskazany {asked}/{len(row['dropped'])}")
+    print(json.dumps(summary, indent=1))
+    print(f"Wyniki (same liczby i ID, można wysłać): {out}")

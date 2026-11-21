@@ -60,16 +60,25 @@ def fridge_ids(items: list[FridgeItem]) -> list[str]:
     return sorted({item.ingredient_id for item in items if item.ingredient_id})
 
 
-def find_candidates(db: sqlite3.Connection, items: list[FridgeItem], profile: UserProfile) -> list[Candidate]:
-    """Wszystkie przepisy, które przechodzą filtr, od najlepszego. Pusta lista to normalny wynik, nie błąd."""
+def find_candidates(
+    db: sqlite3.Connection,
+    items: list[FridgeItem],
+    profile: UserProfile,
+    max_missing: int = MAX_MISSING,
+    min_in_fridge: int = MIN_IN_FRIDGE,
+) -> list[Candidate]:
+    """Wszystkie przepisy, które przechodzą filtr, od najlepszego. Pusta lista to normalny wynik, nie błąd.
+
+    Luźniejsze progi (`max_missing`, `min_in_fridge`) bierze tylko szukanie pytań doprecyzowujących (D-015).
+    """
     rows = db.execute(
         QUERY,
         {
             "fridge": json.dumps(fridge_ids(items)),
             "allergens": json.dumps(profile.allergens),
             "excluded": json.dumps(profile.excluded_ingredients),
-            "max_missing": MAX_MISSING,
-            "min_in_fridge": MIN_IN_FRIDGE,
+            "max_missing": max_missing,
+            "min_in_fridge": min_in_fridge,
             "min_main": MIN_MAIN_INGREDIENTS,
             "max_difficulty": DIFFICULTY_RANK[profile.max_difficulty],
             "max_time": profile.max_time_min,

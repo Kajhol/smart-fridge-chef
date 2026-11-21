@@ -320,6 +320,20 @@ smart-fridge-chef/
 - **Tłumaczenie:** udział wpisów, które zostały po angielsku (kontrola liczb odrzuciła tłumaczenie). Z `--baseline groq/openai/gpt-oss-120b` te same przepisy tłumaczy drugi model, a skrypt zapisuje arkusz do ślepej oceny 1–5 przez zespół (wersje A/B w losowej kolejności, klucz na końcu).
 - **Powtarzalność:** `--repeats N` puszcza każde zapytanie N razy (temperatura 0, ale wybór może się różnić).
 
+### D-015: Pytania doprecyzowujące i lista zakupów
+
+- **Data:** 21.11.2026
+- **Autor:** Igor
+- **Status: przyjęta** (Igor; do wiadomości zespołu, ekran w aplikacji: Kajtek)
+- **Doprecyzowuje:** D-009, D-012
+
+**Decyzja.** `POST /recipes` zwraca dodatkowo `questions` (do 3) i `shopping_list`. Oba pola mają wartości domyślne, więc stary klient działa bez zmian. Liczy je kod (`recipes/questions.py`), bez LLM i bez dodatkowego wywołania API.
+
+- **Pytania („Masz masło?”):** produkt, którego brakuje przepisom tuż za progiem filtra D-012: przepis ma o jeden brak za dużo albo o jeden produkt z lodówki za mało. Dla każdego brakującego produktu liczymy, ile takich przepisów weszłoby, gdyby był w lodówce (`unlocks`), i zwracamy 3 najlepsze. Te same filtry alergenów, wykluczeń, trudności i czasu co przy kandydatach, więc pytanie nigdy nie prowadzi do przepisu z alergenem. `unlocks` to dokładnie przyrost `candidates_considered` po dodaniu produktu (sprawdza test).
+- **Użycie w aplikacji:** „tak” dodaje produkt do lodówki i wysyła zapytanie jeszcze raz. Pytania pokrywają głównie rzeczy spoza lodówki (cukier, mąka, wanilia, cebula), których zdjęcie nie widzi.
+- **Lista zakupów:** braki (`status: missing`) z 3 zwróconych przepisów, każdy produkt raz, z tytułami przepisów, które go potrzebują. Bez ilości: linie z ilościami są w przepisie (`ingredient_lines`), a mapowanie linii na składnik nie jest jednoznaczne.
+- **Pomiar:** `uv run eval-questions` (bez LLM, kilka sekund) dla skanów i profili z D-014 liczy przyrost przepisów po „tak” na wszystkie pytania i test pominięcia: usuwamy z lodówki po jednym produkcie (jak gdyby skan go nie zobaczył) i sprawdzamy, czy trafi do pytań. Na kopii HF i `scan_001`: mediana 367 → 747 przepisów po „tak”, pominięty produkt w pytaniach w 19% przypadków, w których jego brak zmniejsza liczbę przepisów. Pytania wskazują produkty, które odblokowują najwięcej przepisów, a nie te, których skan nie zauważył, stąd niski odsetek. Wynik to same liczby i ID ze słownika, więc plik można przesłać.
+
 ## Otwarte pytania
 
 | Nr | Pytanie | Propozycja | Kto / do kiedy |

@@ -78,9 +78,29 @@ class Recipe(BaseModel):
     url: str | None = Field(description="Link to the original recipe.")
 
 
+class Question(BaseModel):
+    """Pytanie doprecyzowujące (D-015): „Masz masło?”. Liczy kod, nie LLM."""
+
+    ingredient_id: str
+    name_pl: str = Field(description="Polish name from the dictionary.")
+    unlocks: int = Field(ge=1, description="How many more recipes pass the filter if the user has this product.")
+
+
+class ShoppingItem(BaseModel):
+    ingredient_id: str
+    name_pl: str = Field(description="Polish name from the dictionary.")
+    for_recipes: list[str] = Field(description="Titles of the returned recipes that miss this ingredient.")
+
+
 class RecipeResponse(BaseModel):
     recipes: list[Recipe] = Field(max_length=3)
     candidates_considered: int = Field(description="How many recipes passed the SQL filter (D-004).")
+    questions: list[Question] = Field(
+        default=[], max_length=3, description="Products to ask about, best first: each one unlocks more recipes."
+    )
+    shopping_list: list[ShoppingItem] = Field(
+        default=[], description="Missing ingredients of the returned recipes, each listed once."
+    )
 
 
 # --- Odpowiedź LLM tekstowego (structured output, nie wychodzi z API) -----

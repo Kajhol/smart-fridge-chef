@@ -180,7 +180,7 @@ def test_ai_recipe_is_rejected_when_unsafe(db_path, monkeypatch, change):  # noq
 
 def test_ai_recipe_failure_returns_empty(db_path, monkeypatch):  # noqa: F811
     data = post(db_path, monkeypatch, FakeLLM(GeneratedRecipe=RuntimeError("timeout")), None, NO_CANDIDATES)
-    assert data == {"recipes": [], "candidates_considered": 0}
+    assert data["recipes"] == [] and data["candidates_considered"] == 0 and data["shopping_list"] == []
 
 
 def test_guard_catches_polish_forms(db_path):  # noqa: F811
