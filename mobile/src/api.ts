@@ -4,7 +4,8 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL;
 const SHORT_TIMEOUT_MS = 5_000;
 const SCAN_TIMEOUT_MS = 90_000;
 const SAVE_TIMEOUT_MS = 30_000;
-const RECIPES_TIMEOUT_MS = 30_000;
+// Z LLM (D-013) jedno zapytanie to 4 wywołania modelu, a Gemini przy przeciążeniu sam ponawia próby.
+const RECIPES_TIMEOUT_MS = 60_000;
 
 export type Health = {
   status: string;

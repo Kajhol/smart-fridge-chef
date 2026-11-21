@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { findRecipes, type Difficulty, type Recipe, type RecipeResponse, type UserProfile } from './api';
@@ -13,20 +13,31 @@ function capitalize(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+// Przepis od AI przychodzi tylko wtedy, gdy z bazy nic nie pasuje (D-013), więc "1 z 0 pasujących" nie ma sensu.
+function summary(response: RecipeResponse): string {
+  const count = response.recipes.length;
+  if (count === 0) {
+    return 'Nie znalazłem przepisu, w którym brakuje najwyżej 2 składników. Dodaj produkty albo złagodź profil.';
+  }
+  if (response.candidates_considered === 0) {
+    return 'Żaden przepis z bazy nie pasuje do Twoich produktów, więc AI ułożyło własny. Sprawdź go przed gotowaniem.';
+  }
+  return `Najlepsze ${count} z ${response.candidates_considered} pasujących przepisów.`;
+}
+
 type Props = {
   items: FridgeItem[];
   profile: UserProfile;
 };
 
 export default function RecipesSection({ items, profile }: Props) {
-  const [response, setResponse] = useState<RecipeResponse | null>(null);
+  // Wynik pamięta, dla jakiej listy i profilu powstał. Po każdej zmianie przestaje pasować, więc go nie pokazujemy.
+  const [result, setResult] = useState<{ items: FridgeItem[]; profile: UserProfile; response: RecipeResponse } | null>(
+    null,
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Po każdej zmianie listy albo profilu stare wyniki już nie pasują, więc je chowamy.
-  useEffect(() => {
-    setResponse(null);
-  }, [items, profile]);
+  const response = result && result.items === items && result.profile === profile ? result.response : null;
 
   async function search() {
     setLoading(true);
@@ -39,7 +50,7 @@ export default function RecipesSection({ items, profile }: Props) {
         quantity,
         unit,
       }));
-      setResponse(await findRecipes(fridge, profile));
+      setResult({ items, profile, response: await findRecipes(fridge, profile) });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -55,6 +66,7 @@ export default function RecipesSection({ items, profile }: Props) {
         loading={loading}
         disabled={items.length === 0}
       />
+      {loading && <Text style={styles.hint}>To potrwa kilka sekund: AI wybiera przepisy i tłumaczy je na polski.</Text>}
       {error && (
         <Card style={styles.errorCard}>
           <Text style={styles.errorText}>{error}</Text>
@@ -65,11 +77,7 @@ export default function RecipesSection({ items, profile }: Props) {
         <>
           <View style={styles.header}>
             <Text style={styles.heading}>Przepisy</Text>
-            <Text style={styles.hint}>
-              {response.recipes.length === 0
-                ? 'Nie znalazłem przepisu, w którym brakuje najwyżej 2 składników. Dodaj produkty albo złagodź profil.'
-                : `Najlepsze ${response.recipes.length} z ${response.candidates_considered} pasujących. Tytuły i kroki są na razie po angielsku.`}
-            </Text>
+            <Text style={styles.hint}>{summary(response)}</Text>
           </View>
           {response.recipes.map((recipe, index) => (
             <RecipeCard key={recipe.id ?? index} recipe={recipe} />
@@ -83,6 +91,7 @@ export default function RecipesSection({ items, profile }: Props) {
 function RecipeCard({ recipe }: { recipe: Recipe }) {
   const [open, setOpen] = useState(false);
   const missing = recipe.ingredients.filter((ingredient) => ingredient.status === 'missing');
+  const fromAi = recipe.source === 'ai_generated';
   const meta = [
     recipe.time_min !== null ? `${recipe.time_min} min` : null,
     DIFFICULTY_LABELS[recipe.difficulty],
@@ -93,6 +102,7 @@ function RecipeCard({ recipe }: { recipe: Recipe }) {
   return (
     <Card>
       <Pressable onPress={() => setOpen(!open)} style={styles.cardTop}>
+        {fromAi && <Badge label="wygenerowany przez AI" tone="info" />}
         <Text style={styles.title}>{capitalize(recipe.title)}</Text>
         <Text style={styles.meta}>{meta.join(' · ')}</Text>
         <Text style={styles.description}>{recipe.description}</Text>
@@ -145,7 +155,7 @@ function RecipeCard({ recipe }: { recipe: Recipe }) {
             </View>
           ))}
 
-          {recipe.url && (
+          {!fromAi && recipe.url && (
             <AppButton title="Otwórz na food.com" variant="ghost" onPress={() => Linking.openURL(recipe.url!)} />
           )}
         </View>
