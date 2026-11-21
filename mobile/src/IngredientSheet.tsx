@@ -27,6 +27,8 @@ type Props = {
   onPick: (ingredient: IngredientOption, label?: string) => void;
   onCreated: (ingredient: IngredientOption) => void;
   onClose: () => void;
+  // false: tylko wybór ze słownika, bez zamiennika i dodawania (np. wykluczenia w profilu).
+  allowCreate?: boolean;
 };
 
 // Okno na cały ekran z polem wyszukiwania NA GÓRZE: klawiatura wysuwa się od dołu,
@@ -39,6 +41,7 @@ export default function IngredientSheet({
   onPick,
   onCreated,
   onClose,
+  allowCreate = true,
 }: Props) {
   const [query, setQuery] = useState(initialQuery);
   const [unit, setUnit] = useState<Unit>(defaultUnit);
@@ -126,7 +129,11 @@ export default function IngredientSheet({
                 </Pressable>
               ))}
 
-              {needle !== '' && !exactMatch && !substituteFor && (
+              {!allowCreate && needle !== '' && matches.length === 0 && (
+                <Text style={styles.small}>Nie ma tego w słowniku. Spróbuj innej nazwy.</Text>
+              )}
+
+              {allowCreate && needle !== '' && !exactMatch && !substituteFor && (
                 <View style={styles.create}>
                   <Text style={styles.sectionTitle}>
                     {matches.length === 0 ? 'Nie ma tego w słowniku' : 'Nie ma dokładnie takiej pozycji'}

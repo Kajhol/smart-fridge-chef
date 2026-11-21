@@ -1,9 +1,8 @@
 import * as ImagePicker from 'expo-image-picker';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import {
-  getIngredients,
   saveScan,
   scanFridge,
   type IngredientOption,
@@ -15,8 +14,6 @@ import {
 import EvaluationResult from './EvaluationResult';
 import ItemsEditor, { toFridgeItems, type FridgeItem } from './ItemsEditor';
 import PhotoPreview from './PhotoPreview';
-import { DEFAULT_PROFILE } from './profile';
-import RecipesSection from './RecipesSection';
 import { colors, font, radius, spacing } from './theme';
 import { AppButton, Card, StepProgress } from './ui';
 
@@ -36,16 +33,18 @@ const PICKER_OPTIONS: ImagePicker.ImagePickerOptions = {
 
 type Source = 'camera' | 'library';
 
-function sortByName(list: IngredientOption[]): IngredientOption[] {
-  return [...list].sort((a, b) => a.name_pl.localeCompare(b.name_pl, 'pl'));
-}
+type Props = {
+  // Lista i słownik są w App.tsx, bo korzystają z nich też ekrany przepisów i profilu.
+  items: FridgeItem[] | null;
+  onItemsChange: (items: FridgeItem[] | null) => void;
+  ingredients: IngredientOption[];
+  onIngredientCreated: (ingredient: IngredientOption) => void;
+};
 
-export default function ScanScreen() {
+export default function ScanScreen({ items, onItemsChange, ingredients, onIngredientCreated }: Props) {
   const [photos, setPhotos] = useState<ZonePhoto[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [items, setItems] = useState<FridgeItem[] | null>(null);
-  const [ingredients, setIngredients] = useState<IngredientOption[]>([]);
   const [preview, setPreview] = useState<Zone | null>(null);
   // Odpowiedź modelu bez poprawek i czas analizy: potrzebne do metryk przy zapisie do ewaluacji.
   const [prediction, setPrediction] = useState<ScanResult | null>(null);
@@ -58,16 +57,6 @@ export default function ScanScreen() {
     () => new Map(ingredients.map((ingredient) => [ingredient.id, ingredient.name_pl])),
     [ingredients],
   );
-
-  // Słownik pobieramy raz, przy pierwszym pokazaniu ekranu. Bez niego działa skan,
-  // tylko nie da się dodać produktu ani przypisać pozycji spoza słownika.
-  useEffect(() => {
-    getIngredients()
-      .then((list) => setIngredients(sortByName(list)))
-      .catch((caught) =>
-        setError(`Nie udało się pobrać słownika: ${caught instanceof Error ? caught.message : caught}`),
-      );
-  }, []);
 
   const step = photos.length;
   const previewPhoto = photos.find((photo) => photo.zone === preview);
@@ -110,12 +99,6 @@ export default function ScanScreen() {
     setPhotos((previous) => previous.map((photo) => (photo.zone === zone ? { zone, uri } : photo)));
   }
 
-  function onIngredientCreated(ingredient: IngredientOption) {
-    setIngredients((previous) =>
-      previous.some((item) => item.id === ingredient.id) ? previous : sortByName([...previous, ingredient]),
-    );
-  }
-
   async function save() {
     if (!items || !prediction) {
       return;
@@ -147,7 +130,7 @@ export default function ScanScreen() {
       const result = await scanFridge(photos);
       setScanSeconds(Math.round((Date.now() - started) / 100) / 10);
       setPrediction(result);
-      setItems(toFridgeItems(result.items));
+      onItemsChange(toFridgeItems(result.items));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -157,7 +140,7 @@ export default function ScanScreen() {
 
   function reset() {
     setPhotos([]);
-    setItems(null);
+    onItemsChange(null);
     setPrediction(null);
     setScanSeconds(null);
     setEvaluating(false);
@@ -246,18 +229,16 @@ export default function ScanScreen() {
           <View style={styles.resultHeader}>
             <Text style={styles.heading}>Produkty w lodówce</Text>
             <Text style={styles.hint}>
-              Znaleziono {items.length}. Popraw ilości i nazwy, zanim poszukamy przepisów.
+              Znaleziono {items.length}. Popraw ilości i nazwy, a potem szukaj przepisów przyciskiem na dole.
             </Text>
           </View>
           <ItemsEditor
             items={items}
             ingredients={ingredients}
-            onChange={setItems}
+            onChange={onItemsChange}
             onIngredientCreated={onIngredientCreated}
             showVisibility={evaluating}
           />
-
-          {!evaluating && <RecipesSection items={items} profile={DEFAULT_PROFILE} />}
 
           {saved ? (
             <EvaluationResult saved={saved} namesById={namesById} />

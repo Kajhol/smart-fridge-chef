@@ -1,12 +1,13 @@
-import { useState } from 'react';
-import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { findRecipes, type Difficulty, type Recipe, type RecipeResponse, type UserProfile } from './api';
+import type { IngredientOption, Recipe, RecipeResponse, UserProfile } from './api';
 import type { FridgeItem } from './ItemsEditor';
+import { DIFFICULTY_LABELS, describeProfile } from './profile';
+import ProfileScreen from './ProfileScreen';
+import { matches, type Recipes } from './recipes';
 import { colors, font, radius, spacing } from './theme';
-import { AppButton, Badge, Card } from './ui';
-
-const DIFFICULTY_LABELS: Record<Difficulty, string> = { easy: 'łatwy', medium: 'średni', hard: 'trudny' };
+import { AppButton, Badge, Card, ScreenModal } from './ui';
 
 // Tytuły z Food.com są małymi literami ("cheddar omelette").
 function capitalize(text: string): string {
@@ -28,63 +29,68 @@ function summary(response: RecipeResponse): string {
 type Props = {
   items: FridgeItem[];
   profile: UserProfile;
+  recipes: Recipes;
+  ingredients: IngredientOption[];
+  onSaveProfile: (profile: UserProfile) => void;
+  onClose: () => void;
 };
 
-export default function RecipesSection({ items, profile }: Props) {
-  // Wynik pamięta, dla jakiej listy i profilu powstał. Po każdej zmianie przestaje pasować, więc go nie pokazujemy.
-  const [result, setResult] = useState<{ items: FridgeItem[]; profile: UserProfile; response: RecipeResponse } | null>(
-    null,
+// Wyszukiwanie startuje przy otwarciu ekranu (App.tsx), a wyniki trzyma useRecipes, więc po „Wróć”
+// i ponownym otwarciu bez zmian na liście nie pytamy backendu drugi raz.
+export default function RecipesScreen({ items, profile, recipes, ingredients, onSaveProfile, onClose }: Props) {
+  const [editingProfile, setEditingProfile] = useState(false);
+  const namesById = useMemo(
+    () => new Map(ingredients.map((ingredient) => [ingredient.id, ingredient.name_pl])),
+    [ingredients],
   );
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const response = result && result.items === items && result.profile === profile ? result.response : null;
+  const response = matches(recipes.result, items, profile) ? recipes.result.response : null;
 
-  async function search() {
-    setLoading(true);
-    setError(null);
-    try {
-      // Backend chce kształtu FridgeItem z recipes/schema.py: bez key, confidence i visibility.
-      const fridge = items.map(({ ingredient_id, label, quantity, unit }) => ({
-        ingredient_id,
-        label,
-        quantity,
-        unit,
-      }));
-      setResult({ items, profile, response: await findRecipes(fridge, profile) });
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
-    } finally {
-      setLoading(false);
-    }
+  function saveProfile(next: UserProfile) {
+    setEditingProfile(false);
+    onSaveProfile(next);
   }
 
   return (
-    <View style={styles.container}>
-      <AppButton
-        title={response ? 'Szukaj ponownie' : 'Szukaj przepisów'}
-        onPress={search}
-        loading={loading}
-        disabled={items.length === 0}
-      />
-      {loading && <Text style={styles.hint}>To potrwa kilka sekund: AI wybiera przepisy i tłumaczy je na polski.</Text>}
-      {error && (
-        <Card style={styles.errorCard}>
-          <Text style={styles.errorText}>{error}</Text>
+    <ScreenModal title="Przepisy" onClose={onClose}>
+      <Card style={styles.profileCard}>
+        <Text style={styles.small}>Dla {items.length} produktów z lodówki i Twojego profilu:</Text>
+        <Text style={styles.profileText}>{describeProfile(profile, namesById)}</Text>
+        <AppButton title="Zmień profil" variant="secondary" onPress={() => setEditingProfile(true)} />
+      </Card>
+
+      {recipes.loading && (
+        <Card style={styles.loadingCard}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.hint}>AI wybiera przepisy i tłumaczy je na polski. To potrwa kilka sekund.</Text>
         </Card>
       )}
 
-      {response && (
+      {recipes.error && !recipes.loading && (
+        <Card style={styles.errorCard}>
+          <Text style={styles.errorText}>{recipes.error}</Text>
+          <AppButton title="Spróbuj ponownie" onPress={() => recipes.search(items, profile)} />
+        </Card>
+      )}
+
+      {response && !recipes.loading && (
         <>
-          <View style={styles.header}>
-            <Text style={styles.heading}>Przepisy</Text>
-            <Text style={styles.hint}>{summary(response)}</Text>
-          </View>
+          <Text style={styles.hint}>{summary(response)}</Text>
           {response.recipes.map((recipe, index) => (
             <RecipeCard key={recipe.id ?? index} recipe={recipe} />
           ))}
+          <AppButton title="Szukaj jeszcze raz" variant="ghost" onPress={() => recipes.search(items, profile)} />
         </>
       )}
-    </View>
+
+      {editingProfile && (
+        <ProfileScreen
+          profile={profile}
+          ingredients={ingredients}
+          onSave={saveProfile}
+          onClose={() => setEditingProfile(false)}
+        />
+      )}
+    </ScreenModal>
   );
 }
 
@@ -167,17 +173,20 @@ function RecipeCard({ recipe }: { recipe: Recipe }) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    gap: spacing.md,
+  profileCard: {
+    gap: spacing.sm,
   },
-  header: {
-    gap: spacing.xs,
-    marginTop: spacing.sm,
+  small: {
+    fontSize: font.small,
+    color: colors.muted,
   },
-  heading: {
-    fontSize: font.heading,
-    fontWeight: '700',
+  profileText: {
+    fontSize: font.body,
+    fontWeight: '600',
     color: colors.text,
+  },
+  loadingCard: {
+    alignItems: 'center',
   },
   hint: {
     fontSize: font.body,

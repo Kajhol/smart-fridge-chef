@@ -1,5 +1,16 @@
 import type { ReactNode } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import {
+  ActivityIndicator,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors, font, radius, spacing } from './theme';
 
@@ -81,6 +92,50 @@ export function StepProgress({ labels, current }: { labels: string[]; current: n
         );
       })}
     </View>
+  );
+}
+
+// Pigułka do wyboru (alergen, czas, trudność). Zaznaczona jest zielona.
+export function Chip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.chip, selected && styles.chipSelected, pressed && styles.pressed]}
+    >
+      <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+type ScreenModalProps = {
+  title: string;
+  onClose: () => void;
+  closeLabel?: string;
+  children: ReactNode;
+  footer?: ReactNode; // przycisk przyklejony do dołu, np. „Zapisz”
+};
+
+// Osobny ekran na cały telefon (przepisy, profil). Zamiast nawigacji: Modal, tak jak okno wyszukiwania
+// produktów. Androidowy przycisk „wstecz” woła onRequestClose, więc działa jak „Wróć”.
+export function ScreenModal({ title, onClose, closeLabel = 'Wróć', children, footer }: ScreenModalProps) {
+  return (
+    <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+      {/* Modal to osobne okno, więc potrzebuje własnego SafeAreaProvider, żeby znać swoje marginesy. */}
+      <SafeAreaProvider>
+        <SafeAreaView style={styles.modalScreen} edges={['top', 'bottom']}>
+          <View style={styles.modalHeader}>
+            <Pressable onPress={onClose} hitSlop={12} style={styles.modalBack}>
+              <Text style={styles.modalBackText}>← {closeLabel}</Text>
+            </Pressable>
+            <Text style={styles.modalTitle}>{title}</Text>
+          </View>
+          <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
+            {children}
+          </ScrollView>
+          {footer && <View style={styles.modalFooter}>{footer}</View>}
+        </SafeAreaView>
+      </SafeAreaProvider>
+    </Modal>
   );
 }
 
@@ -179,5 +234,60 @@ const styles = StyleSheet.create({
   stepLabelActive: {
     color: colors.text,
     fontWeight: '600',
+  },
+  chip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  chipSelected: {
+    backgroundColor: colors.primarySoft,
+    borderColor: colors.primary,
+  },
+  chipText: {
+    fontSize: font.body,
+    color: colors.muted,
+  },
+  chipTextSelected: {
+    color: colors.primary,
+    fontWeight: '600',
+  },
+  modalScreen: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  modalHeader: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
+    gap: spacing.sm,
+  },
+  modalBack: {
+    alignSelf: 'flex-start',
+  },
+  modalBackText: {
+    fontSize: font.body,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  modalTitle: {
+    fontSize: font.title,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  modalContent: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xl,
+    gap: spacing.lg,
+  },
+  modalFooter: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    backgroundColor: colors.surface,
   },
 });
