@@ -39,6 +39,45 @@ SKIPPED_RAW = frozenset({
 # Pominięte pozycje, które niosą alergen: przepis zostaje, ale alergen trafia do recipe_allergens.
 SKIPPED_ALLERGENS = {"celery salt": ("celery",), "celery seed": ("celery",)}
 
+# Słowa sugerujące alergen w tekście składnika. Używa ich audyt, ewaluacja i import (zamienniki niżej).
+KEYWORDS = {
+    "gluten": r"\b(flour|wheat|bread|breadcrumbs?|pasta|noodles?|spaghetti|macaroni|barley|rye|oats?|couscous|bulgur|"
+    r"semolina|crackers?|cookies?|tortillas?|pita|croutons|beer|soy sauce|worcestershire|malt)\b",
+    "milk": r"\b(milk|cream|cheese|butter|yogurt|ghee|whey|buttermilk|parmesan|mozzarella|cheddar|ricotta|chocolate)\b",
+    "eggs": r"\b(eggs?|mayonnaise|mayo|meringue)\b",
+    "nuts": r"\b(almonds?|walnuts?|pecans?|hazelnuts?|cashews?|pistachios?|macadamia|nuts?|marzipan)\b",
+    "peanuts": r"\bpeanuts?\b",
+    "soy": r"\b(soy|soya|tofu|miso|edamame|tempeh|teriyaki)\b",
+    "sesame": r"\b(sesame|tahini)\b",
+    "mustard": r"\b(mustard|dijon)\b",
+    "celery": r"\b(celery|celeriac)\b",
+    "fish": r"\b(fish|anchov(y|ies)|salmon|tuna|cod|tilapia|sardines?|worcestershire)\b",
+    "crustaceans": r"\b(shrimps?|prawns?|crabs?|lobsters?|crayfish)\b",
+    "sulphites": r"\b(wine|sherry|vinegar|dried apricots?|raisins)\b",
+}
+
+# Linia z zamiennikiem („vanilla or almond extract”, „(or soy milk)”, „can sub walnuts”). Mapowanie bierze
+# pierwszy składnik, a użytkownik może sięgnąć po drugi, więc alergeny z całej takiej linii dopisujemy do przepisu.
+ALTERNATIVE = re.compile(r"\bor\b|\(|\bsub(stitute)?\b|\binstead\b")
+# Fragmenty, które pasują do KEYWORDS, a alergenu nie niosą (fałszywe alarmy z audytu). Ocet spirytusowy
+# i jabłkowy traktujemy jak słownik (bez siarczynów); ocet winny łapie słowo „wine”.
+NOT_ALLERGENS = re.compile(r"cream of tartar|coconut (milk|cream)|crab ?apples?|butternut|vinegar")
+# „Peanut butter” to nie masło (bez mleka), ale orzeszki zostają: zamieniamy na samo „peanut”, nie wycinamy.
+PEANUT_BUTTER = re.compile(r"peanut butter")
+
+
+def alternative_allergens(lines: list[str]) -> set[str]:
+    """Alergeny z linii składników, w których jest zamiennik. Ostrożnie: lepiej odrzucić przepis niż przepuścić alergen."""
+    found = set()
+    for line in lines:
+        text = line.lower()
+        if ALTERNATIVE.search(text):
+            text = PEANUT_BUTTER.sub("peanut", text)
+            text = NOT_ALLERGENS.sub(" ", text)
+            found |= {allergen for allergen, pattern in KEYWORDS.items() if re.search(pattern, text)}
+    return found
+
+
 # Ocena przepisu to średnia ważona (bayesowska): przy kilku ocenach ciągnie do średniej całej bazy,
 # żeby przepis z jedną piątką nie wygrywał z przepisem z setką ocen 4,8.
 RATING_PRIOR_WEIGHT = 5
@@ -318,6 +357,8 @@ def import_recipes(
         report.with_servings += servings is not None
 
         recipe_id = f"fc_{row['id']}"
+        lines = [format_line(item) for item in items]
+        allergens = allergens | alternative_allergens(lines)
         db.execute(
             "INSERT OR IGNORE INTO recipes VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
             (
@@ -333,7 +374,7 @@ def import_recipes(
                 SOURCE,
                 URL_TEMPLATE.format(id=row["id"]),
                 servings,
-                json.dumps([format_line(item) for item in items], ensure_ascii=False),
+                json.dumps(lines, ensure_ascii=False),
             ),
         )
         db.executemany(

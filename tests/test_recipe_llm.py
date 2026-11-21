@@ -69,3 +69,76 @@ def test_model_from_env(monkeypatch):
     assert llm.recipe_model() == "groq/openai/gpt-oss-120b"
     monkeypatch.delenv("RECIPE_MODEL")
     assert llm.recipe_model() == llm.DEFAULT_MODEL
+
+
+def test_usage_is_recorded_for_both_providers():
+    usage: list[dict] = []
+    models = FakeGeminiModels(json.dumps(SELECTION))
+    models.generate_content = lambda **kw: SimpleNamespace(
+        text=json.dumps(SELECTION),
+        usage_metadata=SimpleNamespace(prompt_token_count=100, candidates_token_count=20, thoughts_token_count=5),
+    )
+    llm.generate("p", "s", RecipeSelection, "gemini-3.1-flash-lite", SimpleNamespace(models=models), usage)
+
+    completions = FakeGroqCompletions(json.dumps(SELECTION))
+    completions.create = lambda **kw: SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps(SELECTION)))],
+        usage=SimpleNamespace(prompt_tokens=80, completion_tokens=10),
+    )
+    llm.generate("p", "s", RecipeSelection, "groq/x", SimpleNamespace(chat=SimpleNamespace(completions=completions)), usage)
+
+    assert usage == [
+        {"model": "gemini-3.1-flash-lite", "input_tokens": 100, "output_tokens": 25},
+        {"model": "groq/x", "input_tokens": 80, "output_tokens": 10},
+    ]
+
+
+def test_ollama_uses_openai_compatible_api(monkeypatch):
+    completions = FakeGroqCompletions(json.dumps(SELECTION))
+    client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    result = llm.generate("prompt", "system", RecipeSelection, "ollama/qwen2.5:3b", client)
+
+    assert result.picks[0].recipe_id == "fc_1001"
+    assert completions.calls[0]["model"] == "qwen2.5:3b"
+
+
+def test_ollama_needs_no_api_key(monkeypatch):
+    from smart_fridge_chef.recipes import router
+
+    monkeypatch.setenv("RECIPE_MODEL", "ollama/qwen2.5:3b")
+    assert router.get_llm() is not None
+
+
+def test_transient_errors_are_retried(monkeypatch):
+    monkeypatch.setattr(llm, "RETRY_DELAY_S", 0)
+    attempts = []
+
+    class Overloaded(Exception):
+        code = 503
+
+    def generate_content(**kwargs):
+        attempts.append(1)
+        if len(attempts) < 3:
+            raise Overloaded("high demand")
+        return SimpleNamespace(text=json.dumps(SELECTION))
+
+    client = SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))
+    assert llm.generate("p", "s", RecipeSelection, "gemini-3.1-flash-lite", client).picks
+    assert len(attempts) == 3
+
+
+def test_permanent_errors_are_not_retried(monkeypatch):
+    monkeypatch.setattr(llm, "RETRY_DELAY_S", 0)
+    attempts = []
+
+    class BadKey(Exception):
+        code = 400
+
+    def generate_content(**kwargs):
+        attempts.append(1)
+        raise BadKey("invalid key")
+
+    client = SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))
+    with pytest.raises(BadKey):
+        llm.generate("p", "s", RecipeSelection, "gemini-3.1-flash-lite", client)
+    assert len(attempts) == 1

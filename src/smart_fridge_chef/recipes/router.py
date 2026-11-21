@@ -35,7 +35,8 @@ def get_llm() -> LLM | None:
     """LLM do wyboru i tłumaczenia albo None, gdy nie ma klucza. Testy podmieniają przez dependency_overrides."""
     model = llm.recipe_model()
     keys = next((names for prefix, names in API_KEYS.items() if model.startswith(prefix)), ())
-    if not any(os.getenv(name) for name in keys):
+    # lokalna Ollama nie potrzebuje klucza
+    if not model.startswith(llm.OLLAMA_PREFIX) and not any(os.getenv(name) for name in keys):
         return None
     return lambda prompt, system_prompt, schema: llm.generate(prompt, system_prompt, schema, model)
 
@@ -91,16 +92,21 @@ def build_recipe(db: sqlite3.Connection, candidate: Candidate, fridge: set[str])
     )
 
 
+def recommend(db: sqlite3.Connection, request: RecipeRequest, model: LLM | None) -> RecipeResponse:
+    """Cała logika endpointu na otwartej bazie. Woła ją też ewaluacja (`eval-recipes`), żeby mierzyć to samo."""
+    candidates = find_candidates(db, request.items, request.profile)
+    fridge = set(fridge_ids(request.items))
+    pool = [build_recipe(db, c, fridge) for c in candidates[:SELECTION_POOL]]
+    return RecipeResponse(
+        recipes=suggest(db, pool, request.items, request.profile, model),
+        candidates_considered=len(candidates),
+    )
+
+
 @router.post("/recipes")
 def recipes(request: RecipeRequest, model: Annotated[LLM | None, Depends(get_llm)]) -> RecipeResponse:
     db = connect(database_path())
     try:
-        candidates = find_candidates(db, request.items, request.profile)
-        fridge = set(fridge_ids(request.items))
-        pool = [build_recipe(db, c, fridge) for c in candidates[:SELECTION_POOL]]
-        return RecipeResponse(
-            recipes=suggest(db, pool, request.items, request.profile, model),
-            candidates_considered=len(candidates),
-        )
+        return recommend(db, request, model)
     finally:
         db.close()

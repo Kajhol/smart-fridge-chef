@@ -242,7 +242,7 @@ smart-fridge-chef/
 - **Statusy** `in_fridge`/`missing`/`pantry` liczymy ze składników z RAW_recipes (mapowanie na słownik przy imporcie, D-004). Linie z Karo8870 służą tylko do wyświetlenia (`Recipe.ingredient_lines`), więc nie trzeba ich parować ze składnikami. W ok. 13% przepisów liczba linii różni się od liczby składników (np. „1/3 cup butter or margarine” to jedna linia).
 - **LLM tłumaczy** linie składników na polski w tym samym wywołaniu co tytuł i kroki (`TranslatedRecipe.ingredient_lines_pl`): liczby zostają bez zmian, jednostki po polsku (szklanka, łyżka, łyżeczka), bez przeliczania na g/ml.
 
-**Alergeny** (audyt 18.11.2026). Alergeny przepisu są liczone przy imporcie do tabeli `recipe_allergens`: suma alergenów zmapowanych składników plus alergeny przypraw pomijanych przy mapowaniu (`celery salt`, `celery seed` → seler; bez tego 33 przepisy z selerem przechodziły u alergika). W słowniku dopisane: sos Worcestershire → gluten (słód jęczmienny w wersji UK), rodzynki → siarczyny. `uv run audit-allergens` szuka w liniach składników słów sugerujących alergen spoza `recipe_allergens`. Po poprawkach na kopii HF zostają tylko fałszywe alarmy (np. „peanut butter” przy mleku, „cream of tartar”), zwykły i jabłkowy ocet (przyjmujemy: bez siarczynów) oraz ok. 40 przepisów z alternatywą w linii („vanilla or almond extract”). Alternatyw nie liczymy jako alergenu przepisu, bo podstawowa wersja jest bezpieczna.
+**Alergeny** (audyt 18.11.2026). Alergeny przepisu są liczone przy imporcie do tabeli `recipe_allergens`: suma alergenów zmapowanych składników plus alergeny przypraw pomijanych przy mapowaniu (`celery salt`, `celery seed` → seler; bez tego 33 przepisy z selerem przechodziły u alergika). W słowniku dopisane: sos Worcestershire → gluten (słód jęczmienny w wersji UK), rodzynki → siarczyny. `uv run audit-allergens` szuka w liniach składników słów sugerujących alergen spoza `recipe_allergens`. Po poprawkach na kopii HF zostają tylko fałszywe alarmy (np. „peanut butter” przy mleku, „cream of tartar”), zwykły i jabłkowy ocet (przyjmujemy: bez siarczynów) oraz przepisy z zamiennikiem w linii („vanilla or almond extract”). Zmiana 21.11.2026 (audyt pełnej bazy): zamienniki liczymy jako alergen przepisu, bo użytkownik może sięgnąć po drugi składnik. Import dopisuje alergeny ze słów kluczowych audytu z każdej linii z zamiennikiem („or”, nawias, „sub”, „instead”), z pominięciem znanych fałszywych alarmów (masło orzechowe, kamień winny, mleko kokosowe, octy poza winnym). Na kopii HF dotyczy to 75 z 5823 przepisów (1,3%), które znikają tylko u alergików z tym alergenem.
 
 **Licencja.** Żaden ze zbiorów nie ma otwartej licencji (RAW_recipes: „Data files © Original Authors”; Karo8870: brak opisu i licencji). Oba to dane z Food.com opublikowane do badań z artykułem: Majumder, Li, Ni, McAuley, *Generating Personalized Recipes from Historical User Preferences*, EMNLP 2019. W projekcie: cytujemy artykuł, podajemy link do obu zbiorów, **danych nie commitujemy** (tylko skrypt importu), przy każdym przepisie jest link do food.com.
 
@@ -303,6 +303,23 @@ smart-fridge-chef/
 
 **Później:** przepis od AI z produktów `custom_…`; zamienniki alergenów z kuratorowanej tabeli (opcja 2 z rozmowy o zamiennikach); cache tłumaczeń po ID przepisu.
 
+### D-014: Ewaluacja części przepisowej
+
+- **Data:** 20.11.2026
+- **Autor:** Igor
+- **Status: przyjęta** (Igor; do wiadomości zespołu)
+- **Zamyka:** O-012
+- **Doprecyzowuje:** D-013
+
+**Decyzja.** `uv run eval-recipes` (`recipes/benchmark.py`) puszcza tę samą logikę co `POST /recipes` (`router.recommend`) dla każdej pary skan × profil. Skan to `ground_truth.json` (lodówka po korekcie, D-003). Pełne wyniki idą do `data/eval/` (poza gitem, bo są tam teksty z Food.com), a do `docs/wyniki.md` przepisujemy tylko liczby.
+
+- **Profile (O-012):** `bez_ograniczen`; `jajka_mleko`; `gluten_orzechy` (gluten, orzechy, orzeszki ziemne); `wege` (ryby i skorupiaki jako alergen, mięso, buliony i sos Worcestershire wykluczone); `szybko_seler_gorczyca` (seler, gorczyca, sezam, soja, łatwe, do 30 min).
+- **Bramka:** 0 naruszeń. Naruszenie to przepis z alergenem z profilu (`recipe_allergens` dla bazy, alergeny składników dla przepisu od AI), z wykluczonym składnikiem, przepis od AI albo zamiennik z zakazanym słowem. Skrypt kończy się błędem, gdy jest choć jedno.
+- **Sygnał do przejrzenia:** oryginalne linie z Food.com ze słowem sugerującym alergen z profilu (słowa z `audit-allergens`). Nie zależy od mapowania na słownik, ale ma fałszywe alarmy, więc czyta je człowiek.
+- **Czas i koszt:** czas całego zapytania (mediana, p90), liczba wywołań LLM, tokeny wejścia i wyjścia (z tokenami „myślenia”), błędy LLM. Koszt w USD z cen podanych przez `--price IN OUT` (za 1 mln tokenów) z aktualnego cennika dostawcy, żeby nie trzymać cen w kodzie.
+- **Tłumaczenie:** udział wpisów, które zostały po angielsku (kontrola liczb odrzuciła tłumaczenie). Z `--baseline groq/openai/gpt-oss-120b` te same przepisy tłumaczy drugi model, a skrypt zapisuje arkusz do ślepej oceny 1–5 przez zespół (wersje A/B w losowej kolejności, klucz na końcu).
+- **Powtarzalność:** `--repeats N` puszcza każde zapytanie N razy (temperatura 0, ale wybór może się różnić).
+
 ## Otwarte pytania
 
 | Nr | Pytanie | Propozycja | Kto / do kiedy |
@@ -314,7 +331,6 @@ smart-fridge-chef/
 | O-007 | Jedno wywołanie LLM ze wszystkimi zdjęciami czy osobne na każdą strefę (równolegle)? | Zmierzyć oba warianty w PoC. Ważne przez duplikaty (D-003): przy osobnych wywołaniach model nie widzi pozostałych zdjęć i nie może sam usunąć powtórzeń. | Kajtek |
 | O-010 | Przyprawy podstawowe (sól, olej, pieprz) w rankingu przepisów | Zakładać, że zawsze są, i nie liczyć ich do braków (D-004) | Osoba 2 (backend) |
 | O-011 | Kalorie: z Food.com czy liczone przez backend ze słownika? | Źródłem prawdy jest backend; Food.com służy do sprawdzenia normalizacji | Osoba 2 (backend) |
-| O-012 | Testowe profile użytkowników z alergiami do sprawdzenia progu „0 przepisów z alergenem” | 3–5 profili z typowymi alergenami | Osoba 2 (backend) |
 
 ## Zamknięte pytania
 
@@ -324,3 +340,4 @@ smart-fridge-chef/
 | O-008 | Kanoniczna jednostka każdego składnika (szt., g, ml) | Pole `unit` w słowniku (`src/smart_fridge_chef/data/ingredients.json`), sprawdzane przez `Ingredient` w `dictionary.py` |
 | O-003 | Źródło przepisów: RecipeNLG czy Food.com? | Food.com: RAW_recipes (Kaggle) + ilości z Karo8870 (HF), D-010 |
 | O-009 | Jak w ewaluacji liczymy pozycje „inny” i produkty widoczne częściowo? | D-003: pole `visibility` w ręcznej liście, pozycje spoza słownika poza F1 |
+| O-012 | Testowe profile użytkowników z alergiami do sprawdzenia progu „0 przepisów z alergenem” | 5 profili w `recipes/benchmark.py` (`PROFILES`), D-014 |

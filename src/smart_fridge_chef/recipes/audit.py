@@ -10,23 +10,7 @@ import sqlite3
 from collections import Counter, defaultdict
 from pathlib import Path
 
-from smart_fridge_chef.recipes.importer import DEFAULT_DB
-
-KEYWORDS = {
-    "gluten": r"\b(flour|wheat|bread|breadcrumbs?|pasta|noodles?|spaghetti|macaroni|barley|rye|oats?|couscous|bulgur|"
-    r"semolina|crackers?|cookies?|tortillas?|pita|croutons|beer|soy sauce|worcestershire|malt)\b",
-    "milk": r"\b(milk|cream|cheese|butter|yogurt|ghee|whey|buttermilk|parmesan|mozzarella|cheddar|ricotta|chocolate)\b",
-    "eggs": r"\b(eggs?|mayonnaise|mayo|meringue)\b",
-    "nuts": r"\b(almonds?|walnuts?|pecans?|hazelnuts?|cashews?|pistachios?|macadamia|nuts?|marzipan)\b",
-    "peanuts": r"\bpeanuts?\b",
-    "soy": r"\b(soy|soya|tofu|miso|edamame|tempeh|teriyaki)\b",
-    "sesame": r"\b(sesame|tahini)\b",
-    "mustard": r"\b(mustard|dijon)\b",
-    "celery": r"\b(celery|celeriac)\b",
-    "fish": r"\b(fish|anchov(y|ies)|salmon|tuna|cod|tilapia|sardines?|worcestershire)\b",
-    "crustaceans": r"\b(shrimps?|prawns?|crabs?|lobsters?|crayfish)\b",
-    "sulphites": r"\b(wine|sherry|vinegar|dried apricots?|raisins)\b",
-}
+from smart_fridge_chef.recipes.importer import DEFAULT_DB, KEYWORDS
 
 
 def audit(db_path: Path) -> dict[str, Counter[str]]:
