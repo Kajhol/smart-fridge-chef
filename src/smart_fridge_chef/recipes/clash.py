@@ -83,6 +83,13 @@ def local_skip_reason(model: str, gpu: dict | None, available: set[str] | None, 
     return None
 
 
+def default_pause(model: str) -> float:
+    """Przerwa między zapytaniami pod darmowe limity. Jedno zapytanie to ok. 4 wywołania i 5–6 tys. tokenów."""
+    if llm.local(model):
+        return 0.0
+    return 60.0 if model.startswith(llm.GROQ_PREFIX) else 20.0
+
+
 class Ping(BaseModel):
     ok: bool
 
@@ -102,6 +109,7 @@ COLUMNS = [
     ("Podejrzane", lambda m, s: s["recipes_with_suspects"]),
     ("Z błędem LLM", lambda m, s: s["requests_with_llm_errors"]),
     ("Timeouty", lambda m, s: s["llm_timeouts"]),
+    ("Limity (429)", lambda m, s: sum(n for k, n in s["llm_error_kinds"].items() if "429" in k)),
     ("Mediana [s]", lambda m, s: s["seconds_median"]),
     ("p90 [s]", lambda m, s: s["seconds_p90"]),
     ("USD/zapytanie", lambda m, s: "–" if s["usd_per_request"] is None else s["usd_per_request"]),
@@ -129,6 +137,9 @@ def main() -> None:
     parser.add_argument("--repeats", type=int, default=1)
     parser.add_argument("--budget", type=float, default=None,
                         help="sekundy na jedno zapytanie dla wszystkich modeli (domyślnie jak w /recipes)")
+    parser.add_argument("--pause", type=float, default=None,
+                        help="sekundy przerwy między zapytaniami, poza pomiarem czasu; domyślnie pod darmowe limity: "
+                             "Groq 60 (8000 tokenów/min), Gemini 20 (15 zapytań/min), lokalne 0")
     parser.add_argument("--price", nargs=3, action="append", default=[], metavar=("MODEL", "IN", "OUT"),
                         help="cennik modelu w USD za 1 mln tokenów; można podać kilka razy")
     parser.add_argument("--db", type=Path, default=None)
@@ -155,10 +166,11 @@ def main() -> None:
     db = sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True)
     summaries, rows = {}, {}
     for model in models:
-        print(f"== {model}: {len(scans)} skanów × {len(profiles)} profili × {args.repeats}")
+        pause = args.pause if args.pause is not None else default_pause(model)
+        print(f"== {model}: {len(scans)} skanów × {len(profiles)} profili × {args.repeats} (przerwa {pause:.0f} s)")
         if llm.local(model):
             warm_up(model)
-        result = run(db, scans, profiles, Calls(model, budget_s=args.budget), None, args.repeats)
+        result = run(db, scans, profiles, Calls(model, budget_s=args.budget), None, args.repeats, pause)
         price = (0.0, 0.0) if llm.local(model) else prices.get(model)
         summaries[model] = summarize(result, price)
         rows[model] = shareable_rows(result["rows"])
@@ -177,6 +189,9 @@ def main() -> None:
     out.write_text(text, encoding="utf-8")
     (OUT_DIR / f"clash_{stamp}.md").write_text(report + "\n", encoding="utf-8")
     print(report)
+    for model, summary in summaries.items():
+        if summary["llm_error_kinds"]:
+            print(f"Błędy {model}: {summary['llm_error_kinds']}")
     if gpu:
         print(f"GPU: {gpu['name']} ({gpu['vram_mb']} MB)")
     print(f"Wyniki (same liczby, można wysłać): {out}")

@@ -201,3 +201,35 @@ def test_call_timeout_is_capped_by_the_budget(monkeypatch):
     assert llm.call_timeout("gemini-3.1-flash-lite") == 7
     monkeypatch.setenv("RECIPES_BUDGET_S", "12")
     assert llm.request_budget("groq/x") == 12
+
+
+def test_groq_rate_limit_is_retried_after_the_wait_it_asks_for(monkeypatch):
+    import openai
+
+    waits = []
+    monkeypatch.setattr(llm.time, "sleep", waits.append)
+    response = SimpleNamespace(status_code=429, headers={}, request=None)
+    limit = openai.RateLimitError(
+        "Error code: 429 - Rate limit reached ... Please try again in 4.3875s.",
+        response=SimpleNamespace(**vars(response), json=dict),
+        body={"error": {"code": "rate_limit_exceeded"}},
+    )
+    attempts = []
+
+    def create(**kwargs):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise limit
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps(SELECTION)))])
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    assert llm.generate("p", "s", RecipeSelection, "groq/openai/gpt-oss-120b", client).picks
+    assert len(attempts) == 2 and waits and waits[0] >= 4.3875
+    assert llm.error_kind(limit) == "RateLimitError 429"
+
+
+def test_retry_after_reads_gemini_retry_delay_and_header():
+    assert llm.retry_after(Exception("429 RESOURCE_EXHAUSTED ... 'retryDelay': '17s'")) == 17
+    headers = {"retry-after": "3"}
+    assert llm.retry_after(SimpleNamespace(response=SimpleNamespace(headers=headers))) == 3
+    assert llm.retry_after(Exception("bad json")) is None

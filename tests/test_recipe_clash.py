@@ -55,7 +55,7 @@ def test_clash_writes_one_table_for_all_models(db_path, tmp_path, monkeypatch): 
         TranslatedRecipe=translation,
     ))
     monkeypatch.setattr(sys, "argv", ["eval-clash", str(scan), "--db", str(db_path), "--profiles", "jajka_mleko",
-                                      "--models", "gemini-a", "groq/b", "--local", "ollama/qwen2.5:7b"])
+                                      "--models", "gemini-a", "groq/b", "--pause", "0", "--local", "ollama/qwen2.5:7b"])
     monkeypatch.setattr(clash, "detect_gpu", lambda: None)
     monkeypatch.setattr(clash, "ollama_models", lambda: None)
     clash.main()
@@ -65,4 +65,15 @@ def test_clash_writes_one_table_for_all_models(db_path, tmp_path, monkeypatch): 
     assert "NVIDIA" in out["skipped"]["ollama/qwen2.5:7b"]
     assert "title" not in json.dumps(out["rows"])
     table = next((tmp_path / "eval").glob("clash_*.md")).read_text(encoding="utf-8")
-    assert table.count("\n") == 4 and "| groq/b | 1 | 0 |" in table
+    assert table.count("\n") == 4 and "| groq/b | 1 | 0 |" in table and "Limity (429)" in table
+
+
+def test_error_kinds_and_default_pauses(db_path, monkeypatch):  # noqa: F811
+    monkeypatch.setattr(llm, "RETRY_DELAY_S", 0)
+    calls = fake(RecipeSelection=httpx.ReadTimeout("slow"), TranslatedRecipe=translation)
+    with sqlite3.connect(db_path) as db:
+        result = run(db, [("s", ITEMS)], {"bez_ograniczen": PROFILES["bez_ograniczen"]}, calls)
+    assert summarize(result)["llm_error_kinds"] == {"ReadTimeout": 1}
+    assert clash.default_pause("groq/openai/gpt-oss-120b") == 60
+    assert clash.default_pause("gemini-3.1-flash-lite") == 20
+    assert clash.default_pause("ollama/qwen2.5:7b") == 0

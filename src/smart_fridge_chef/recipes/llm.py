@@ -1,6 +1,7 @@
 """LLM tekstowy dla przepisów: wybór dostawcy po nazwie modelu, odpowiedź zawsze walidowana schematem Pydantic."""
 
 import os
+import re
 import time
 from typing import Any, TypeVar
 
@@ -42,8 +43,42 @@ def transient(error: Exception) -> bool:
         return False
     if isinstance(error, (TimeoutError, httpx.TimeoutException, httpx.NetworkError, openai.APIConnectionError)):
         return True
-    status = getattr(error, "code", None) or getattr(error, "status_code", None)
-    return isinstance(status, int) and (status == 429 or status >= 500)
+    code = status(error)
+    return code is not None and (code == 429 or code >= 500)
+
+
+def status(error: Exception) -> int | None:
+    """Kod HTTP błędu. Gemini trzyma go w `code`, OpenAI/Groq w `status_code` (ich `code` to napis, np.
+    "rate_limit_exceeded", więc nie wolno go brać jako pierwszego)."""
+    for name in ("status_code", "code"):
+        value = getattr(error, name, None)
+        if isinstance(value, int):
+            return value
+    return None
+
+
+# Dostawcy mówią, ile poczekać: Groq „Please try again in 4.38s”, Gemini „retryDelay: 17s”, nagłówek retry-after.
+RETRY_AFTER = re.compile(r"(?:try again in|retryDelay['\"]?:\s*['\"]?)\s*([0-9.]+)\s*s", re.IGNORECASE)
+MAX_RETRY_AFTER_S = 60.0
+
+
+def retry_after(error: Exception) -> float | None:
+    """Ile sekund dostawca każe czekać przed kolejną próbą (429), jeśli to mówi."""
+    response = getattr(error, "response", None)
+    header = getattr(getattr(response, "headers", None), "get", lambda _: None)("retry-after")
+    try:
+        if header is not None:
+            return min(float(header), MAX_RETRY_AFTER_S)
+    except ValueError:
+        pass
+    match = RETRY_AFTER.search(str(error))
+    return min(float(match.group(1)), MAX_RETRY_AFTER_S) if match else None
+
+
+def error_kind(error: Exception) -> str:
+    """Krótki rodzaj błędu do raportu, bez treści (np. „RateLimitError 429”, „ReadTimeout”)."""
+    code = status(error)
+    return f"{type(error).__name__} {code}" if code is not None else type(error).__name__
 
 
 def local(model: str) -> bool:
@@ -177,7 +212,7 @@ def generate(
         except Exception as error:
             if attempt == RETRIES - 1 or not transient(error):
                 raise
-            delay = RETRY_DELAY_S * 2**attempt
+            delay = max(RETRY_DELAY_S * 2**attempt, (retry_after(error) or 0) + 0.5)
             if deadline is not None and time.monotonic() + delay + MIN_CALL_TIMEOUT_S > deadline:
                 raise
             time.sleep(delay)
