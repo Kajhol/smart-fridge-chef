@@ -111,6 +111,8 @@ Z kluczem dla modelu z `RECIPE_MODEL` (`GEMINI_API_KEY` albo `GROQ_API_KEY` dla 
 
 Odpowiedź `POST /recipes` ma też `questions` (do 3 produktów do dopytania, np. „Masz masło?”, z liczbą przepisów, które odblokują) i `shopping_list` (braki ze zwróconych przepisów), D-015. `uv run eval-questions` mierzy pytania bez LLM i zapisuje do `data/eval/` same liczby.
 
+`uv run eval-clash` porównuje modele na tych samych skanach i profilach (D-016) i zapisuje jedną tabelę do `data/eval/clash_*.md`: `--models gemini-3.1-flash-lite groq/openai/gpt-oss-120b`, ceny przez `--price MODEL IN OUT`. Modele lokalne dodaje `--local ollama/qwen2.5:7b`; idą tylko przy karcie NVIDIA (`nvidia-smi`) i działającej Ollamie z pobranym modelem. Każde wywołanie LLM ma limit 15 s, a całe `/recipes` 45 s (`LLM_TIMEOUT_S`, `RECIPES_BUDGET_S` w `.env`) Na darmowych planach clash robi przerwy między zapytaniami (`--pause`, domyślnie Groq 60 s, Gemini 20 s), żeby mierzyć modele, a nie limity.
+
 `uv run audit-allergens` sprawdza gotową bazę: wypisuje linie składników, które sugerują alergen, którego przepis nie ma w tabeli `recipe_allergens` (wynik czyta człowiek, są fałszywe alarmy).
 
 ## Testy

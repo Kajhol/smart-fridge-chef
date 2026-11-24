@@ -1,9 +1,12 @@
 """LLM tekstowy dla przepisów: wybór dostawcy po nazwie modelu, odpowiedź zawsze walidowana schematem Pydantic."""
 
 import os
+import re
 import time
 from typing import Any, TypeVar
 
+import httpx
+import openai
 from google import genai
 from google.genai import types
 from openai import OpenAI
@@ -17,17 +20,92 @@ OLLAMA_BASE_URL = "http://localhost:11434/v1"  # lokalny model, np. ollama/qwen2
 
 Schema = TypeVar("Schema", bound=BaseModel)
 
-RETRIES = 3  # przy przeciążeniu dostawcy (429, 5xx) ponawiamy z rosnącą przerwą
+RETRIES = 3  # przy przeciążeniu dostawcy (429, 5xx) albo timeoucie ponawiamy z rosnącą przerwą
 RETRY_DELAY_S = 2.0
-# Jedno wywołanie trwa zwykle 1–2 s. Bez limitu zawieszone wywołanie blokuje /recipes, aż aplikacja sama się
-# podda (60 s). Po przekroczeniu chef wraca do rankingu z SQL. Przekroczenia nie ponawiamy: to nie 429/5xx.
-TIMEOUT_S = 15
+
+# M5.5: żadne wywołanie nie wisi dłużej niż CALL_TIMEOUT_S, a całe zapytanie /recipes nie dłużej niż budżet.
+# Jedno wywołanie trwa zwykle 1–2 s, więc 15 s to już zawieszenie (wartość Kajtka z b6d6609).
+# Lokalny model (Ollama) jest wolniejszy i pierwsze wywołanie ładuje go do pamięci, więc ma dłuższe limity.
+CALL_TIMEOUT_S = 15.0
+LOCAL_CALL_TIMEOUT_S = 120.0
+REQUEST_BUDGET_S = 45.0  # apka czeka na /recipes 60 s
+LOCAL_REQUEST_BUDGET_S = 300.0
+MIN_CALL_TIMEOUT_S = 1.0
+
+
+class BudgetExceeded(TimeoutError):
+    """Skończył się czas na całe zapytanie: kolejnego wywołania LLM już nie robimy."""
 
 
 def transient(error: Exception) -> bool:
-    """Błąd chwilowy: limit albo przeciążenie po stronie dostawcy. Zły JSON czy zły klucz nie są chwilowe."""
-    status = getattr(error, "code", None) or getattr(error, "status_code", None)
-    return isinstance(status, int) and (status == 429 or status >= 500)
+    """Błąd chwilowy: limit, przeciążenie dostawcy albo timeout. Zły JSON czy zły klucz nie są chwilowe."""
+    if isinstance(error, BudgetExceeded):
+        return False
+    if isinstance(error, (TimeoutError, httpx.TimeoutException, httpx.NetworkError, openai.APIConnectionError)):
+        return True
+    code = status(error)
+    return code is not None and (code == 429 or code >= 500)
+
+
+def status(error: Exception) -> int | None:
+    """Kod HTTP błędu. Gemini trzyma go w `code`, OpenAI/Groq w `status_code` (ich `code` to napis, np.
+    "rate_limit_exceeded", więc nie wolno go brać jako pierwszego)."""
+    for name in ("status_code", "code"):
+        value = getattr(error, name, None)
+        if isinstance(value, int):
+            return value
+    return None
+
+
+# Dostawcy mówią, ile poczekać: Groq „Please try again in 4.38s”, Gemini „retryDelay: 17s”, nagłówek retry-after.
+RETRY_AFTER = re.compile(r"(?:try again in|retryDelay['\"]?:\s*['\"]?)\s*([0-9.]+)\s*s", re.IGNORECASE)
+MAX_RETRY_AFTER_S = 60.0
+
+
+def retry_after(error: Exception) -> float | None:
+    """Ile sekund dostawca każe czekać przed kolejną próbą (429), jeśli to mówi."""
+    response = getattr(error, "response", None)
+    header = getattr(getattr(response, "headers", None), "get", lambda _: None)("retry-after")
+    try:
+        if header is not None:
+            return min(float(header), MAX_RETRY_AFTER_S)
+    except ValueError:
+        pass
+    match = RETRY_AFTER.search(str(error))
+    return min(float(match.group(1)), MAX_RETRY_AFTER_S) if match else None
+
+
+def error_kind(error: Exception) -> str:
+    """Krótki rodzaj błędu do raportu, bez treści (np. „RateLimitError 429”, „ReadTimeout”)."""
+    code = status(error)
+    return f"{type(error).__name__} {code}" if code is not None else type(error).__name__
+
+
+def local(model: str) -> bool:
+    return model.startswith(OLLAMA_PREFIX)
+
+
+def call_timeout(model: str) -> float:
+    """Limit jednego wywołania w sekundach; LLM_TIMEOUT_S w .env nadpisuje domyślny."""
+    default = LOCAL_CALL_TIMEOUT_S if local(model) else CALL_TIMEOUT_S
+    return float(os.getenv("LLM_TIMEOUT_S") or default)
+
+
+def request_budget(model: str) -> float:
+    """Czas na wszystkie wywołania LLM jednego zapytania; RECIPES_BUDGET_S w .env nadpisuje domyślny."""
+    default = LOCAL_REQUEST_BUDGET_S if local(model) else REQUEST_BUDGET_S
+    return float(os.getenv("RECIPES_BUDGET_S") or default)
+
+
+def remaining_timeout(model: str, deadline: float | None) -> float:
+    """Limit dla następnego wywołania: zwykły, ale nie dłuższy niż czas do końca budżetu."""
+    timeout = call_timeout(model)
+    if deadline is None:
+        return timeout
+    left = deadline - time.monotonic()
+    if left < MIN_CALL_TIMEOUT_S:
+        raise BudgetExceeded(f"request budget exhausted before calling {model}")
+    return min(timeout, left)
 
 
 def recipe_model() -> str:
@@ -42,9 +120,10 @@ def record(usage: list[dict] | None, model: str, input_tokens: Any, output_token
 
 def call_gemini(
     prompt: str, system_prompt: str, schema: type[Schema], model: str, client: Any = None,
-    usage: list[dict] | None = None,
+    usage: list[dict] | None = None, timeout: float = CALL_TIMEOUT_S,
 ) -> Schema:
-    client = client or genai.Client(http_options=types.HttpOptions(timeout=TIMEOUT_S * 1000))  # w milisekundach
+    # timeout w milisekundach; SDK samo nie ponawia, ponawia generate()
+    client = client or genai.Client(http_options=types.HttpOptions(timeout=int(timeout * 1000)))
     response = client.models.generate_content(
         model=model,
         contents=prompt,
@@ -83,18 +162,23 @@ def call_openai_compatible(
 
 def call_groq(
     prompt: str, system_prompt: str, schema: type[Schema], model: str, client: Any = None,
-    usage: list[dict] | None = None,
+    usage: list[dict] | None = None, timeout: float = CALL_TIMEOUT_S,
 ) -> Schema:
-    client = client or OpenAI(base_url=GROQ_BASE_URL, api_key=os.getenv("GROQ_API_KEY"), timeout=TIMEOUT_S)
+    # max_retries=0: SDK OpenAI domyślnie ponawia 2 razy po cichu, a ponawianie robi generate()
+    client = client or OpenAI(base_url=GROQ_BASE_URL, api_key=os.getenv("GROQ_API_KEY"), timeout=timeout, max_retries=0)
     return call_openai_compatible(prompt, system_prompt, schema, model, client, usage)
+
+
+def ollama_base_url() -> str:
+    return os.getenv("OLLAMA_BASE_URL") or OLLAMA_BASE_URL
 
 
 def call_ollama(
     prompt: str, system_prompt: str, schema: type[Schema], model: str, client: Any = None,
-    usage: list[dict] | None = None,
+    usage: list[dict] | None = None, timeout: float = LOCAL_CALL_TIMEOUT_S,
 ) -> Schema:
     # Ollama nie sprawdza klucza, ale klient OpenAI wymaga niepustego
-    client = client or OpenAI(base_url=os.getenv("OLLAMA_BASE_URL") or OLLAMA_BASE_URL, api_key="ollama")
+    client = client or OpenAI(base_url=ollama_base_url(), api_key="ollama", timeout=timeout, max_retries=0)
     return call_openai_compatible(prompt, system_prompt, schema, model, client, usage)
 
 
@@ -105,9 +189,13 @@ def generate(
     model: str | None = None,
     client: Any = None,
     usage: list[dict] | None = None,
+    deadline: float | None = None,
 ) -> Schema:
     """Jedno wywołanie LLM. `gemini-*` idzie do Gemini, `groq/<model>` do Groq (np. groq/openai/gpt-oss-120b),
-    `ollama/<model>` do lokalnej Ollamy (np. ollama/qwen2.5:3b)."""
+    `ollama/<model>` do lokalnej Ollamy (np. ollama/qwen2.5:3b).
+
+    `deadline` (time.monotonic()) to koniec budżetu całego zapytania: po nim nie zaczynamy kolejnej próby,
+    a limit pojedynczej próby jest przycinany do pozostałego czasu."""
     model = model or recipe_model()
     if model.startswith("gemini-"):
         call = call_gemini
@@ -118,10 +206,14 @@ def generate(
     else:
         raise ValueError(f"Unknown provider for model: {model}")
     for attempt in range(RETRIES):
+        timeout = remaining_timeout(model, deadline)
         try:
-            return call(prompt, system_prompt, schema, model, client, usage)
+            return call(prompt, system_prompt, schema, model, client, usage, timeout)
         except Exception as error:
             if attempt == RETRIES - 1 or not transient(error):
                 raise
-            time.sleep(RETRY_DELAY_S * 2**attempt)
+            delay = max(RETRY_DELAY_S * 2**attempt, (retry_after(error) or 0) + 0.5)
+            if deadline is not None and time.monotonic() + delay + MIN_CALL_TIMEOUT_S > deadline:
+                raise
+            time.sleep(delay)
     raise AssertionError("unreachable")
